@@ -28,6 +28,8 @@ export class AudioEngine {
   private source: AudioSource | null = null
   private stemAnalysers: [Stem, StemAnalyser][] = []
   private playing = false
+  /** What's playing, for showing: the demo, a song's file name, stems, the microphone. */
+  trackName = 'Demo beat'
 
   constructor() {
     this.volume.connect(this.ctx.destination)
@@ -54,19 +56,23 @@ export class AudioEngine {
   }
 
   async useDemo() {
+    this.trackName = 'Demo beat'
     await this.setSource(new DemoSource(this.ctx))
   }
 
   async useFile(file: File) {
+    this.trackName = file.name.replace(/\.[^.]+$/, '')
     await this.setSource(new FileSource(this.ctx, file))
   }
 
   /** Several files played together, sample-aligned: one per stem. */
   async useStems(files: File[]) {
+    this.trackName = `Stems · ${files.length} files`
     await this.setSource(new StemSource(this.ctx, files))
   }
 
   async useMic() {
+    this.trackName = 'Microphone'
     await this.setSource(new MicSource(this.ctx))
   }
 
@@ -91,6 +97,11 @@ export class AudioEngine {
   /** Jump to a sixteenth step of the music (demo and files; live input can't). */
   seek(step: number) {
     this.source?.seek?.(step)
+  }
+
+  /** Whether the music is playing. */
+  get isPlaying() {
+    return this.playing
   }
 
   pause() {

@@ -45,9 +45,33 @@ function savedPresets(): Plugin {
   }
 }
 
+// Pictures of the built-in presets for the Presets card, made in the browser
+// (ui/presetsCard.ts, thumbMaker) and written to public/thumbs.
+function presetThumbs(): Plugin {
+  const dir = fileURLToPath(new URL('./public/thumbs/', import.meta.url))
+  return {
+    name: 'lyria-preset-thumbs',
+    configureServer(server) {
+      server.middlewares.use('/__thumb/', async (req, res) => {
+        const name = (req.url ?? '').replace(/^\//, '')
+        if (req.method !== 'PUT' || !/^[a-z0-9-]+\.webp$/.test(name)) {
+          res.statusCode = 400
+          res.end()
+          return
+        }
+        const chunks: Buffer[] = []
+        for await (const chunk of req) chunks.push(chunk as Buffer)
+        await mkdir(dir, { recursive: true })
+        await writeFile(dir + name, Buffer.concat(chunks))
+        res.end('ok')
+      })
+    },
+  }
+}
+
 export default defineConfig({
   build: { target: 'es2022' },
-  plugins: [savedPresets()],
+  plugins: [savedPresets(), presetThumbs()],
   // Writing the presets file shouldn't trigger a reload.
-  server: { watch: { ignored: ['**/presets/**'] } },
+  server: { watch: { ignored: ['**/presets/**', '**/public/thumbs/**'] } },
 })

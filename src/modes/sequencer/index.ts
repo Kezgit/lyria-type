@@ -41,10 +41,10 @@ const SUBS: SubMode[] = [barcode, pulse, stretch, dots, ledger, sq]
 const key = (sub: SubMode, k: string) => `${sub.id}_${k}`
 
 const params: ParamSchema = {
-  style: { type: 'select', value: SUBS[0].id, label: 'sub-mode', options: Object.fromEntries(SUBS.map((s) => [s.label, s.id])) },
-  hold: { type: 'number', value: 0.35, min: 0.02, max: 4, step: 0.01, label: 'note release (s)' },
+  style: { type: 'select', value: SUBS[0].id, label: 'style', options: Object.fromEntries(SUBS.map((s) => [s.label, s.id])) },
+  hold: { type: 'number', value: 0.35, min: 0.02, max: 4, step: 0.01, label: 'notes fade after (s)' },
   scroll: { type: 'select', value: 'still', label: 'scroll', options: { Still: 'still', Left: 'left', Right: 'right', Up: 'up', Down: 'down' } },
-  scrollSpeed: { type: 'number', value: 60, min: 0, max: 800, step: 1, label: 'scroll speed (px/s)' },
+  scrollSpeed: { type: 'number', value: 60, min: 0, max: 800, step: 1, label: 'scroll speed' },
 }
 for (const sub of SUBS) {
   for (const [k, def] of Object.entries(sub.params)) params[key(sub, k)] = { ...def, label: def.label ?? k }
@@ -90,12 +90,22 @@ for (const sub of SUBS) {
 
 const subOf = (values: Record<string, any>) => SUBS.find((s) => s.id === values.style) ?? SUBS[0]
 
+/** The colour groups, which sit right under the picture's layout. */
+const COLOUR_GROUPS = ['Colour', 'Ink', 'Recolour', 'Gradient map', 'Mask']
+
 function groupsFor(values: Record<string, any>) {
   const sub = subOf(values)
+  const own = Object.entries(sub.groups).map(([title, keys]) => [title, keys.map((k) => key(sub, k))] as [string, string[]])
+  const shared = Object.entries(finishGroups(sub.id, sub.groups))
+  const colour = [...own, ...shared].filter(([t]) => COLOUR_GROUPS.includes(t))
+  const rest = own.filter(([t]) => !COLOUR_GROUPS.includes(t))
+  // After Layout (or the page, or the first group).
+  const after = ['Layout', 'Page'].map((t) => rest.findIndex(([r]) => r === t)).find((i) => i >= 0) ?? 0
+  rest.splice(after + 1, 0, ...colour)
   return {
-    Sequencer: ['hold', 'scroll', 'scrollSpeed'],
-    ...Object.fromEntries(Object.entries(sub.groups).map(([title, keys]) => [title, keys.map((k) => key(sub, k))])),
-    ...finishGroups(sub.id),
+    Timing: ['hold', 'scroll', 'scrollSpeed'],
+    ...Object.fromEntries(rest),
+    ...Object.fromEntries(shared.filter(([t]) => !COLOUR_GROUPS.includes(t))),
   }
 }
 

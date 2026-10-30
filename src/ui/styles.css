@@ -43,32 +43,6 @@ html, body {
   gap: 8px;
 }
 
-.tabs {
-  position: sticky;
-  top: -8px;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 2px;
-  margin: -8px -8px 0;
-  padding: 8px 8px 6px;
-  background: var(--panel-bg);
-  border-bottom: 1px solid #2c2c30;
-}
-
-.tabs button {
-  font: 500 12px/1 system-ui, sans-serif;
-  padding: 8px 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: #8e8e95;
-  cursor: pointer;
-}
-
-.tabs button:hover { color: var(--panel-fg); background: #222226; }
-.tabs button.active { color: #fff; background: #2c2c32; }
-
 .tab-page {
   display: flex;
   flex-direction: column;
@@ -178,9 +152,7 @@ html, body {
 .volume::-moz-range-progress { width: 6px; border-radius: 3px; background: #f8f9fc; }
 .volume::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: #fff; }
 
-@media (max-width: 720px) {
-  #app { grid-template-columns: 1fr; grid-template-rows: 60vh 1fr; }
-}
+
 
 /* --- Orchestra rack ---------------------------------------------------------- */
 
@@ -379,12 +351,7 @@ html, body {
 }
 
 html, body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
-#panel { padding: 10px 12px 24px; gap: 10px; border-left: 1px solid var(--panel-line); scrollbar-width: thin; scrollbar-color: #2a2c31 transparent; }
 
-.tabs { margin: -10px -12px 0; padding: 12px 12px 10px; gap: 4px; border-bottom: 1px solid var(--panel-line); background: color-mix(in srgb, var(--panel-bg) 92%, transparent); backdrop-filter: blur(8px); }
-.tabs button { font: 600 10.5px/1 inherit; font-family: inherit; letter-spacing: 0.09em; text-transform: uppercase; padding: 9px 0; border-radius: 7px; color: var(--panel-dim); transition: color 0.2s var(--ease), background 0.2s var(--ease); }
-.tabs button:hover { background: var(--panel-raise); }
-.tabs button.active { color: var(--panel-fg); background: #212328; box-shadow: inset 0 0 0 1px #2b2e34; }
 
 #panel .tp-rotv {
   --tp-base-background-color: transparent;
@@ -511,6 +478,216 @@ html, body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inte
 .toolbar .toolbar-gap { width: 1px; height: 18px; margin: 0 4px; background: rgb(255 255 255 / 0.14); }
 #panel .toolbar-flash > .tp-fldv_b { animation: toolbar-flash 1.2s ease; }
 @keyframes toolbar-flash { 0%, 40% { background: rgb(143 180 255 / 0.35); } 100% { background: transparent; } }
-/* Groups jumped to from the toolbar land below the sticky tab bar. */
-#panel .tp-fldv_t { scroll-margin-top: 64px; }
 .grad-overlay .grad-handle.offscreen { fill: rgba(20, 20, 22, 0.75); stroke: #fff; stroke-dasharray: 3 2; }
+
+/* ---- Floating panel ----------------------------------------------------------
+   The stage fills the window; the panel is cards floating over it, each a pill
+   that opens into a window. Left: Text, Scene. Right: Mode, Presets, Export,
+   Audio, where an open card pushes the rest down (and they share the height). */
+#app { display: block; position: relative; }
+#stage { position: absolute; inset: 0; }
+#panel {
+  position: absolute; inset: 0; z-index: 20; pointer-events: none;
+  background: none; padding: 0; border: 0; overflow: visible; display: block;
+}
+.dock {
+  position: absolute; top: 14px; bottom: 68px; width: 324px;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+}
+.dock-left { left: 14px; align-items: flex-start; }
+.dock-right { right: 14px; align-items: flex-end; }
+.card {
+  pointer-events: auto; display: flex; flex-direction: column; min-height: 0; flex: 0 0 auto; max-width: 100%;
+  border-radius: 18px; border: 1px solid rgb(255 255 255 / 0.09);
+  background: rgb(18 19 22 / 0.78); backdrop-filter: blur(18px) saturate(1.2); -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.28);
+  transition: border-radius 0.25s var(--ease), background 0.2s var(--ease);
+}
+.card.open { width: 100%; flex: 0 1 auto; border-radius: 16px; background: rgb(15 16 19 / 0.9); }
+.pill {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  height: 36px; padding: 0 14px 0 16px; border: 0; border-radius: inherit; background: none;
+  color: var(--panel-fg); font: 600 10.5px/1 inherit; font-family: inherit; letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer; flex: none; min-width: 116px;
+}
+.pill:hover { background: rgb(255 255 255 / 0.05); }
+.pill svg { opacity: 0.55; transform: rotate(-90deg); transition: transform 0.25s var(--ease), opacity 0.2s; }
+.dock-right .pill svg { transform: rotate(90deg); }
+.card.open > .pill svg { transform: none; opacity: 0.8; }
+.card.open > .pill { border-bottom: 1px solid var(--panel-line); border-radius: 16px 16px 0 0; }
+.card > .tab-page {
+  overflow-y: auto; min-height: 0; padding: 10px 12px 14px;
+  /* So one long card (Presets, Mode) can't squeeze the others shut: they share what's left. */
+  max-height: 64vh;
+  scrollbar-width: thin; scrollbar-color: #2a2c31 transparent;
+  animation: card-in 0.22s var(--ease);
+}
+@keyframes card-in { from { opacity: 0; transform: translateY(-4px); } }
+#panel .tp-fldv_t { scroll-margin-top: 8px; }
+.copy { min-height: 110px; }
+
+/* Transport, bottom right: record, back to the start, play. */
+.transport { right: 14px; bottom: 14px; }
+.restart {
+  position: absolute; right: 58px; bottom: 14px; z-index: 5; width: 36px; height: 36px; display: grid; place-items: center;
+  border: 1px solid rgb(255 255 255 / 0.15); border-radius: 50%; background: rgb(20 20 22 / 0.75); color: #fff; cursor: pointer;
+}
+.restart:hover { background: rgb(44 44 50 / 0.9); }
+.record { right: 102px; bottom: 14px; }
+/* The volume, in its pill beside the notch. */
+.volume {
+  position: static; width: 96px; height: 22px;
+  writing-mode: horizontal-tb; direction: ltr;
+}
+.volume::-webkit-slider-runnable-track {
+  width: auto; height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, #f8f9fc var(--fill, 80%), rgb(255 255 255 / 0.18) var(--fill, 80%));
+}
+.volume::-webkit-slider-thumb { margin-left: 0; margin-top: -6px; }
+.volume::-moz-range-track { width: auto; height: 4px; }
+.volume::-moz-range-progress { width: auto; height: 4px; }
+
+/* Presets card. */
+.presets-head { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+.presets-filter { display: flex; gap: 4px; padding: 3px; background: var(--panel-input); border-radius: 9px; }
+.presets-filter button {
+  flex: 1; padding: 6px 0; border: 0; border-radius: 7px; background: none; color: var(--panel-dim);
+  font: 600 11px/1 inherit; font-family: inherit; cursor: pointer;
+}
+.presets-filter button.on { background: #2a2d33; color: var(--panel-fg); }
+.presets-save {
+  padding: 8px 0; border: 1px dashed rgb(255 255 255 / 0.16); border-radius: 8px; background: none;
+  color: var(--panel-fg); font: 600 11px/1 inherit; font-family: inherit; cursor: pointer;
+}
+.presets-save:hover { background: rgb(255 255 255 / 0.05); }
+.presets-list h4 {
+  margin: 14px 2px 6px; font-size: 10px; font-weight: 650; letter-spacing: 0.1em; text-transform: uppercase; color: var(--panel-dim);
+}
+.presets-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.preset-tile {
+  position: relative; display: flex; flex-direction: column; gap: 5px; padding: 0; border: 0; background: none;
+  color: var(--panel-fg); text-align: left; cursor: pointer; font: inherit; min-width: 0;
+}
+.preset-pic {
+  display: block; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden;
+  background: linear-gradient(135deg, #22252b, #15161a); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+  transition: box-shadow 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.preset-pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.preset-name { font-size: 11px; line-height: 1.2; color: #b9bcc3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
+.preset-tile:hover .preset-pic { box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.25); transform: translateY(-1px); }
+.preset-tile.on .preset-pic { box-shadow: 0 0 0 2px var(--panel-accent); }
+.preset-tile.on .preset-name { color: var(--panel-fg); }
+.preset-delete {
+  position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; display: grid; place-items: center;
+  border-radius: 50%; background: rgb(0 0 0 / 0.65); color: #fff; font-size: 13px; line-height: 1; opacity: 0; transition: opacity 0.15s;
+}
+.preset-tile:hover .preset-delete { opacity: 1; }
+
+/* Section descriptions on hover. */
+.tip {
+  position: fixed; z-index: 100; max-width: 240px; padding: 8px 10px; border-radius: 8px; pointer-events: none;
+  background: #f4f5f7; color: #121317; font-size: 11.5px; line-height: 1.4; box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
+  animation: tip-in 0.12s ease;
+}
+.tip[hidden] { display: none; }
+@keyframes tip-in { from { opacity: 0; } }
+
+/* Audio card: the level and each stem, in its colour on the stage. */
+.stem-meters { display: flex; flex-direction: column; gap: 8px; padding: 10px 6px 4px; }
+.stem-row { --c: #f4f5f7; display: grid; grid-template-columns: 10px 84px 1fr; align-items: center; gap: 8px; font-size: 11px; color: #b9bcc3; }
+.stem-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px color-mix(in srgb, var(--c) 60%, transparent); }
+.stem-track { height: 6px; border-radius: 3px; background: rgb(255 255 255 / 0.07); overflow: hidden; }
+.stem-bar { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--c); transition: width 0.08s linear; }
+
+/* The notch: what's playing, top centre. */
+.island {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 25;
+  display: flex; align-items: center; gap: 8px;
+}
+.notch {
+  display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 14px 0 6px;
+  border: 0; border-radius: 20px; background: #000; color: #fff; cursor: pointer;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.06);
+  transition: transform 0.25s var(--ease);
+}
+.notch:hover { transform: scale(1.03); }
+.volume-pill { padding: 0 14px; gap: 8px; cursor: default; color: rgb(255 255 255 / 0.7); }
+.volume-pill:hover { transform: none; }
+.notch-disc {
+  width: 28px; height: 28px; border-radius: 50%; flex: none; position: relative; border: 0; padding: 0; cursor: pointer;
+  transition: box-shadow 0.2s var(--ease);
+  animation: notch-spin 6s linear infinite; animation-play-state: paused;
+}
+.notch-disc::after { content: ''; position: absolute; inset: 10px; border-radius: 50%; background: #000; }
+.notch.playing .notch-disc { animation-play-state: running; }
+.notch-disc:hover { box-shadow: 0 0 0 2px rgb(255 255 255 / 0.85); }
+@keyframes notch-spin { to { transform: rotate(1turn); } }
+.notch-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; max-width: 150px; text-align: left; }
+.notch-info b { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notch-info small { font-size: 10px; color: rgb(255 255 255 / 0.5); white-space: nowrap; }
+.notch-wave { width: 118px; height: 22px; flex: none; }
+
+@media (max-width: 900px) {
+  .dock { width: min(324px, calc(50vw - 20px)); }
+  .notch-info { display: none; }
+}
+
+/* Mode sections: open by default, with a clearer line between them. */
+#panel .card-mode .tp-rotv_c > .tp-fldv { border-top: 1px solid #2a2c32 !important; margin-top: 4px; padding-top: 4px; }
+#panel .card-mode .tp-rotv_c > .tp-fldv:first-child { border-top: 0 !important; margin-top: 0; }
+
+/* Presets: a star on built-in ones (they move up into Yours). */
+.preset-star {
+  position: absolute; top: 4px; left: 4px; width: 20px; height: 20px; display: grid; place-items: center;
+  border-radius: 50%; background: rgb(0 0 0 / 0.6); color: #fff; font-size: 12px; line-height: 1; opacity: 0; transition: opacity 0.15s;
+}
+.preset-star.on { color: #fec700; opacity: 1; }
+.preset-tile:hover .preset-star { opacity: 1; }
+
+/* Instruments: the rack inside its card, wider than the others. */
+.card-instruments.open { width: min(600px, calc(100vw - 28px)); max-width: none; }
+.card .rack {
+  position: static; max-width: none; background: none; border: 0; border-radius: 0; box-shadow: none;
+  color: var(--panel-fg); font: inherit; overflow: visible; zoom: 1 !important;
+}
+.card .rack header {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 0 0 10px; margin-bottom: 8px;
+  background: none; border: 0; border-bottom: 1px solid var(--panel-line); cursor: default;
+}
+.card .rack header[hidden], .card .rack-field[hidden] { display: none; }
+.card .rack-stages button { padding: 5px 8px; border-radius: 6px; background: var(--panel-input); color: var(--panel-dim); font: 600 10px/1 inherit; font-family: inherit; }
+.card .rack-stages button.on { background: var(--panel-fg); color: #0b0c0f; }
+.card .rack-meter { background: var(--panel-input); }
+.card .rack-body { padding: 0; gap: 6px; }
+.card .rack-row { gap: 8px; }
+.card .rack-swatch { width: 12px; height: 12px; border: 0; }
+.card .rack-row.off .rack-swatch { background: transparent; box-shadow: inset 0 0 0 1.5px var(--c); }
+.card .rack-name {
+  width: 118px; padding: 5px 26px 5px 9px; border: 0; border-radius: 8px; background: var(--panel-input);
+  box-shadow: inset 2px 0 0 var(--c);
+}
+.card .rack-name b { font-size: 11.5px; font-weight: 600; }
+.card .rack-name small { color: var(--panel-dim); font-size: 9.5px; }
+.card .rack-chip { top: 50%; right: 8px; margin-top: -6px; border-radius: 4px; border: 0; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.2); }
+.card .rack-level { height: 24px; width: 4px; background: var(--panel-input); }
+.card .dial { width: 34px; }
+.card .dial-body { fill: #1f2125; stroke: none; }
+.card .dial-track { stroke: #2a2c31; }
+.card .dial-label { color: var(--panel-dim); font-size: 8px; }
+.card .rack-steps { grid-template-columns: repeat(16, 14px); gap: 3px; }
+.card .rack-steps .pad, .card .rack-steps .pad.alt {
+  height: 22px; border: 0; border-radius: 4px; box-shadow: none;
+  background: color-mix(in srgb, var(--c) calc(var(--on) * 100%), #2a2c32);
+}
+.card .rack-steps .pad.alt { background: color-mix(in srgb, var(--c) calc(var(--on) * 100%), #34363d); }
+.card .rack-steps .pad:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 70%, transparent); }
+.card .rack-steps .pad.now { outline: 1.5px solid rgb(255 255 255 / 0.55); outline-offset: 0; }
+.card .rack-steps .pad.held { box-shadow: inset 0 0 0 1px #c56a6a; }
+.card .rack-field { flex-wrap: wrap; gap: 2px 4px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--panel-line); }
+.card .rack-field h5 { flex-basis: 100%; margin: 0 0 4px; font-size: 10px; font-weight: 650; letter-spacing: 0.1em; text-transform: uppercase; color: var(--panel-dim); }
+.card .rack-field .dial { display: inline-grid; }
+.card .rack-shapes { flex-basis: 100%; margin: 6px 0 0; gap: 4px; }
+.card .rack-shapes button { padding: 6px 9px; border: 0; border-radius: 7px; background: var(--panel-input); color: #b9bcc3; font: 600 10.5px/1 inherit; font-family: inherit; }
+.card .rack-shapes button.on { background: var(--panel-fg); color: #0b0c0f; }
+.card .rack-hint { margin-top: 8px; padding: 0; }

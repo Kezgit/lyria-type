@@ -6,15 +6,12 @@ import { rackFeed } from '../modes/orchestra/conductor'
 import { LAYER_INFO, colourKey } from '../modes/orchestra/layers'
 import { STAGES } from '../modes/orchestra/stage'
 
-// The Orchestra's channel rack, over the stage: one row per layer with its
-// colour, sensitivity and gate dials and a 16-step strip that lights as the
-// layer plays (dashed: hits the gate held back), then dials for the whole
-// piece, which way the walls pour, a letters toggle and where the song is. Dials turn
-// by dragging left/right; the rack moves by dragging its title bar.
-
-const COLLAPSED_KEY = 'lyria-type:rack-collapsed'
-const SIZE_KEY = 'lyria-type:rack-size'
-const POSITION_KEY = 'lyria-type:rack-position'
+// The instruments rack, in its own card (every mode): one row per layer with
+// its colour (the colour its letters take), an on / off light, sensitivity and
+// gate dials and a 16-step strip that lights as the layer plays (dashed: hits
+// the gate held back; click to place a note). In the Orchestra it also shows
+// where the song is and the Orchestra's own dials. Dials turn by dragging
+// left/right.
 
 const FIELD_DIALS: { key: string; label: string; hint: string; pct?: boolean }[] = [
   { key: 'sensitivity', label: 'Sens', hint: 'How readily every layer is heard' },
@@ -132,17 +129,14 @@ function dial(key: string, label: string, hint: string, format: (v: number) => s
 const pct = (v: number) => `${Math.round(v * 100)}%`
 const num = (v: number) => (Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(2))
 
-export function buildRack(stage: HTMLElement) {
+export function buildRack(page: HTMLElement, visible: () => boolean) {
   const root = document.createElement('div')
   root.className = 'rack'
-  root.hidden = true
-  stage.appendChild(root)
+  page.appendChild(root)
 
+  // Where the song is (the Orchestra's sections and energy): only in the Orchestra.
   const head = document.createElement('header')
-  head.title = 'Drag to move the rack'
   head.innerHTML = `
-    <button class="rack-fold" title="Show / hide the rack">▾</button>
-    <span class="rack-title">Orchestra</span>
     <span class="rack-stages">${STAGES.map((s) => `<button data-stage="${s}" title="Skip to the next ${s}">${s}</button>`).join('')}</span>
     <span class="rack-next"></span>
     <span class="rack-meter" title="Energy of the song now"><i class="energy"></i></span>
@@ -152,88 +146,6 @@ export function buildRack(stage: HTMLElement) {
   const body = document.createElement('div')
   body.className = 'rack-body'
   root.appendChild(body)
-
-  // --- Resize: drag the corner to scale the whole rack --------------------------
-  const grip = document.createElement('span')
-  grip.className = 'rack-grip'
-  grip.title = 'Drag to resize the rack'
-  root.appendChild(grip)
-  let size = 1
-  const setSize = (s: number) => {
-    size = Math.max(0.55, Math.min(1.8, s))
-    root.style.zoom = String(size)
-    try {
-      localStorage.setItem(SIZE_KEY, String(size))
-    } catch {}
-  }
-  try {
-    setSize(Number(localStorage.getItem(SIZE_KEY)) || 1)
-  } catch {}
-  grip.addEventListener('pointerdown', (e) => {
-    e.preventDefault()
-    e.stopPropagation()
-    grip.setPointerCapture(e.pointerId)
-    const start = { x: e.clientX, size, width: root.getBoundingClientRect().width }
-    const move = (m: PointerEvent) => setSize(start.size * (1 + (m.clientX - start.x) / Math.max(200, start.width)))
-    const up = () => {
-      grip.removeEventListener('pointermove', move)
-      grip.removeEventListener('pointerup', up)
-      keepInside()
-    }
-    grip.addEventListener('pointermove', move)
-    grip.addEventListener('pointerup', up)
-  })
-
-  // --- Fold and move ------------------------------------------------------------
-  const fold = head.querySelector<HTMLButtonElement>('.rack-fold')!
-  const setFolded = (folded: boolean) => {
-    body.hidden = folded
-    fold.textContent = folded ? '▸' : '▾'
-    // Opening near the bottom edge: keep the whole rack on the stage.
-    requestAnimationFrame(keepInside)
-    try {
-      localStorage.setItem(COLLAPSED_KEY, folded ? '1' : '')
-    } catch {}
-  }
-  fold.addEventListener('pointerdown', (e) => e.stopPropagation())
-  fold.addEventListener('click', () => setFolded(!body.hidden))
-  try {
-    setFolded(!!localStorage.getItem(COLLAPSED_KEY))
-  } catch {}
-
-  const place = (x: number, y: number) => {
-    const maxX = Math.max(0, stage.clientWidth - root.offsetWidth)
-    const maxY = Math.max(0, stage.clientHeight - root.offsetHeight)
-    root.style.left = `${Math.max(0, Math.min(maxX, x))}px`
-    root.style.top = `${Math.max(0, Math.min(maxY, y))}px`
-    root.style.bottom = 'auto'
-  }
-  function keepInside() {
-    if (root.style.top) place(root.offsetLeft, root.offsetTop)
-  }
-  new ResizeObserver(keepInside).observe(stage)
-  try {
-    const saved = JSON.parse(localStorage.getItem(POSITION_KEY) ?? 'null')
-    if (saved) requestAnimationFrame(() => place(saved.x, saved.y))
-  } catch {}
-  head.addEventListener('pointerdown', (e) => {
-    if ((e.target as HTMLElement).closest('button')) return
-    e.preventDefault()
-    head.setPointerCapture(e.pointerId)
-    const start = { x: e.clientX - root.offsetLeft, y: e.clientY - root.offsetTop }
-    root.classList.add('moving')
-    const move = (m: PointerEvent) => place(m.clientX - start.x, m.clientY - start.y)
-    const up = () => {
-      root.classList.remove('moving')
-      head.removeEventListener('pointermove', move)
-      head.removeEventListener('pointerup', up)
-      try {
-        localStorage.setItem(POSITION_KEY, JSON.stringify({ x: root.offsetLeft, y: root.offsetTop }))
-      } catch {}
-    }
-    head.addEventListener('pointermove', move)
-    head.addEventListener('pointerup', up)
-  })
 
   // --- Layer rows -----------------------------------------------------------------
   const dials: Dial[] = []
@@ -287,7 +199,7 @@ export function buildRack(stage: HTMLElement) {
       steps.appendChild(pad)
       return pad
     })
-    row.append(swatch, sens.el, gate.el, name, meter, steps)
+    row.append(swatch, name, meter, sens.el, gate.el, steps)
     body.appendChild(row)
     return { l, row, swatch, picker, sens, gate, meter: meter.firstElementChild as HTMLElement, pads }
   })
@@ -295,6 +207,7 @@ export function buildRack(stage: HTMLElement) {
   // --- The whole piece --------------------------------------------------------------
   const field = document.createElement('div')
   field.className = 'rack-field'
+  field.innerHTML = '<h5>Orchestra</h5>'
   for (const d of FIELD_DIALS) {
     const k = dial(d.key, d.label, d.hint, d.pct ? pct : num)
     dials.push(k)
@@ -346,8 +259,8 @@ export function buildRack(stage: HTMLElement) {
   field.appendChild(shapes)
   body.appendChild(field)
   const hint = document.createElement('p')
-  hint.className = 'rack-hint'
-  hint.textContent = 'Click a step to place a note there, played every bar alongside what is heard (click again to clear). Click a letter on the stage (shift-click for more, double-click for its line, or drag across several) to give it to a layer. With Keyboard on, type to play the letters.'
+  hint.className = 'hint rack-hint'
+  hint.textContent = 'Click a step to add a note (played every bar). Click a dot to mute an instrument, its square to change its colour. While paused, click letters on the stage to give them to an instrument.'
   body.appendChild(hint)
 
   const stageChips = [...head.querySelectorAll<HTMLElement>('[data-stage]')]
@@ -362,16 +275,16 @@ export function buildRack(stage: HTMLElement) {
 
   const frame = () => {
     requestAnimationFrame(frame)
-    const visible = state.modeId === 'orchestra'
-    root.hidden = !visible
-    if (!visible) return
+    if (!visible()) return
+    const orchestra = state.modeId === 'orchestra'
+    head.hidden = !orchestra
+    field.hidden = !orchestra
     const v = values()
     for (const c of stageChips) c.classList.toggle('on', c.dataset.stage === rackFeed.stage)
     next.textContent = rackFeed.next ? `→ ${rackFeed.next} in ${Math.max(1, Math.ceil(rackFeed.barsToNext))} bar${Math.ceil(rackFeed.barsToNext) > 1 ? 's' : ''}` : ''
     energy.style.width = pct(Math.min(1, rackFeed.energy))
     wind.style.width = pct(Math.min(1, rackFeed.anticipation))
     unison.style.width = pct(Math.min(1, rackFeed.unison))
-    if (body.hidden) return
     for (const d of dials) d.sync()
     for (const { key, id, b } of shapeButtons) b.classList.toggle('on', v[key] === id)
     for (const t of toggles) {

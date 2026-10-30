@@ -27,7 +27,7 @@ const ICONS: Record<string, string> = {
   png: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4 3.5"/>',
 }
 
-export function buildToolbar(engine: Engine, viewChanged: () => void) {
+export function buildToolbar(engine: Engine, viewChanged: () => void, panel: { open(card: string): void; goTo(...prefixes: string[]): boolean; png(): void }) {
   const stage = engine.canvas.parentElement!
   const bar = document.createElement('div')
   bar.className = 'toolbar'
@@ -43,25 +43,8 @@ export function buildToolbar(engine: Engine, viewChanged: () => void) {
   }
   const gap = () => bar.appendChild(Object.assign(document.createElement('span'), { className: 'toolbar-gap' }))
 
-  // --- Panel helpers: the Mode tab, a group by its title, a button by its text.
-  const showMode = () => [...document.querySelectorAll<HTMLButtonElement>('#panel .tabs button')].find((b) => b.textContent === 'Mode')?.click()
-  const groupTitled = (prefix: string) =>
-    [...document.querySelectorAll<HTMLElement>('#panel .tab-page:not([hidden]) .tp-fldv_t')].find((t) => t.textContent?.trim().startsWith(prefix))
-  const goTo = (prefix: string) => {
-    showMode()
-    requestAnimationFrame(() => {
-      const title = groupTitled(prefix)
-      if (!title) return
-      const folder = title.closest('.tp-fldv')
-      // Open it (and any group it sits in).
-      for (let f = folder; f; f = f.parentElement?.closest('.tp-fldv') ?? null) {
-        if (!f.classList.contains('tp-fldv-expanded')) f.querySelector<HTMLElement>(':scope > .tp-fldv_b')?.click()
-      }
-      title.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      folder?.classList.add('toolbar-flash')
-      setTimeout(() => folder?.classList.remove('toolbar-flash'), 1200)
-    })
-  }
+  // --- Panel helpers: a Mode group by its title, a button by its text.
+  const goTo = (prefix: string) => panel.goTo(prefix)
   const panelButton = (text: string) => [...document.querySelectorAll<HTMLButtonElement>('#panel button')].find((b) => b.textContent === text)
 
   // --- View --------------------------------------------------------------------
@@ -89,7 +72,7 @@ export function buildToolbar(engine: Engine, viewChanged: () => void) {
   const mask = button('mask', 'Paint the mask (alt to erase)', () => { panelButton('Paint the mask')?.click() })
   gap()
   button('keyframes', 'Keyframes', () => goTo('Keyframes'))
-  button('png', 'Save a hi-res PNG (size in the Mode tab)', () => panelButton('Save hi-res PNG')?.click())
+  button('png', 'Save a hi-res PNG (size in Export)', () => panel.png())
 
   // Keep the buttons showing what's on.
   const sync = () => {

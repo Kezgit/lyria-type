@@ -286,7 +286,7 @@ export class Engine {
       // Letters given to instruments, shared by every mode; their colours from the Orchestra's (light pages deepen).
       const orch = state.modeParams.orchestra ?? {}
       const colours = LAYERS.map((l) => orch[colourKey(l)] as string)
-      const parts = this.parts.update(audio, text, state.letterParts, colours, dt)
+      const parts = this.parts.update(audio, text, state.letterParts, colours, dt, orch, state.modeId !== 'orchestra')
       const light = (() => {
         const n = parseInt(state.background.slice(1), 16)
         return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255 > 0.6

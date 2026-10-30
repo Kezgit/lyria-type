@@ -8,7 +8,8 @@ import { LAYER_INFO, colourKey, encodeAssign, parseAssign } from '../modes/orche
 // assignment is shared, see modes/shared/parts.ts): click a
 // letter (shift / cmd-click to add or drop more), double-click for its whole
 // line, or drag a box over some letters, then pick the layer they play (and
-// its colour). "Default" hands them back to the layout by line.
+// its colour). "Default" hands them back to the layout by line. Only while
+// the music is paused, so clicks during playback don't pop the menu up.
 
 const values = () => state.modeParams.orchestra
 
@@ -111,8 +112,8 @@ export function buildPicker(stage: HTMLElement, engine: Engine) {
 
   const canvas = engine.canvas
   canvas.addEventListener('pointerdown', (e) => {
-    // (Option-drag pans the view instead; see view.ts.)
-    if (e.button !== 0 || e.altKey || panning()) return
+    // (Option-drag pans the view instead; see view.ts. While the music plays, clicks don't pick.)
+    if (e.button !== 0 || e.altKey || panning() || state.audio.playing) return
     // Shift / cmd adds to (or drops from) the letters already chosen.
     const adding = e.shiftKey || e.metaKey || e.ctrlKey
     const kept = adding ? selected : []
@@ -158,7 +159,7 @@ export function buildPicker(stage: HTMLElement, engine: Engine) {
   })
   // Double-click: the whole line of the letter under the pointer.
   canvas.addEventListener('dblclick', (e) => {
-    if (e.altKey) return
+    if (e.altKey || state.audio.playing) return
     const r = stage.getBoundingClientRect()
     const x = e.clientX - r.left
     const y = e.clientY - r.top

@@ -45,7 +45,7 @@ import type { DotInfo } from './palettes/types'
 // takes the colour (one gradient per stem), nothing else.
 
 export const finishParams: ParamSchema = {
-  vocals: { type: 'number', value: 1, min: 0, max: 2, step: 0.01, label: 'vocals (0 = hidden)' },
+  vocals: { type: 'number', value: 1, min: 0, max: 2, step: 0.01, label: 'vocals' },
   instruments: { type: 'number', value: 1, min: 0, max: 2, step: 0.01, label: 'instruments' },
   drums: { type: 'number', value: 1, min: 0, max: 2, step: 0.01, label: 'drums' },
   bass: { type: 'number', value: 1, min: 0, max: 2, step: 0.01, label: 'bass' },
@@ -58,13 +58,13 @@ export const finishParams: ParamSchema = {
       ...Object.fromEntries(PALETTES.map((pl) => [pl.label, pl.id])),
     },
   },
-  colourOffset: { type: 'number', value: 0.2, min: 0, max: 1, step: 0.01, label: 'ramp offset per stem' },
-  colourDepth: { type: 'number', value: 0.7, min: 0, max: 1, step: 0.01, label: 'weight deepens colour' },
+  colourOffset: { type: 'number', value: 0.2, min: 0, max: 1, step: 0.01, label: 'shift per part' },
+  colourDepth: { type: 'number', value: 0.7, min: 0, max: 1, step: 0.01, label: 'louder = deeper' },
 
   ...dotShapeParams,
   ...hazeParams,
 
-  gradOn: { type: 'boolean', value: false, label: 'gradient map' },
+  gradOn: { type: 'boolean', value: false, label: 'use the gradient' },
   gradStops: { type: 'text', value: '0:#3186ff,0.5:#fc413d,1:#fec700', label: 'gradient stops' },
   gradShape: { type: 'select', value: 'linear', label: 'shape', options: { linear: 'linear', radial: 'radial', 'by loudness': 'weight' } },
   gradRepeat: { type: 'select', value: 'clamp', label: 'past the ends', options: { 'hold the end colours': 'clamp', repeat: 'repeat', mirror: 'mirror' } },
@@ -72,37 +72,37 @@ export const finishParams: ParamSchema = {
   gradY0: { type: 'number', value: 0, min: -2, max: 2, step: 0.005, label: 'start y' },
   gradX1: { type: 'number', value: 1, min: -2, max: 2, step: 0.005, label: 'end x' },
   gradY1: { type: 'number', value: 0, min: -2, max: 2, step: 0.005, label: 'end y' },
-  gradWeight: { type: 'number', value: 0, min: 0, max: 1, step: 0.01, label: 'mix in loudness' },
+  gradWeight: { type: 'number', value: 0, min: 0, max: 1, step: 0.01, label: 'louder = further along' },
   maskOn: { type: 'boolean', value: true, label: 'use the mask' },
   maskData: { type: 'text', value: '', label: 'mask' },
   maskWhat: { type: 'select', value: 'marks', label: 'mask hides', options: { 'the marks': 'marks', 'the gradient (marks keep their colour)': 'gradient' } },
-  maskStrength: { type: 'number', value: 1, min: 0, max: 1, step: 0.01, label: 'mask strength' },
-  maskInvert: { type: 'boolean', value: false, label: 'invert mask' },
+  maskStrength: { type: 'number', value: 1, min: 0, max: 1, step: 0.01, label: 'strength' },
+  maskInvert: { type: 'boolean', value: false, label: 'invert' },
   brushSize: { type: 'number', value: 60, min: 4, max: 400, step: 1, label: 'brush size (px)' },
   brushSoft: { type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, label: 'brush softness' },
 
-  dotGrid: { type: 'boolean', value: false, label: 'draw as a dot grid' },
+  dotGrid: { type: 'boolean', value: false, label: 'draw as dots' },
   gridAcross: { type: 'number', value: 64, min: 12, max: 84, step: 1, label: 'dots across' },
-  gridSize: { type: 'number', value: 1, min: 0.2, max: 2.5, step: 0.01, label: 'dot size (×)' },
-  gridContrast: { type: 'number', value: 1, min: 0.2, max: 3, step: 0.01, label: 'size by weight (contrast)' },
-  gridSolid: { type: 'number', value: 0.6, min: 0, max: 1, step: 0.01, label: 'faint marks made solid' },
+  gridSize: { type: 'number', value: 1, min: 0.2, max: 2.5, step: 0.01, label: 'dot size' },
+  gridContrast: { type: 'number', value: 1, min: 0.2, max: 3, step: 0.01, label: 'contrast' },
+  gridSolid: { type: 'number', value: 0.6, min: 0, max: 1, step: 0.01, label: 'solid faint marks' },
   gridGhost: { type: 'number', value: 0.5, min: 0, max: 1, step: 0.01, label: 'silent dots' },
   gridHaze: {
-    type: 'select', value: 'both', label: 'main haze from',
+    type: 'select', value: 'both', label: 'haze comes from',
     options: { 'the picture and the dots': 'both', 'the picture (its colour wash under the dots)': 'picture', 'the dots': 'dots' },
   },
-  dotHaze: { type: 'number', value: 6, min: 0, max: 80, step: 0.5, label: 'dots\' own haze (px, 0 = off)' },
-  dotHazeStretch: { type: 'number', value: 1, min: 1, max: 12, step: 0.1, label: 'dot haze stretch' },
-  dotHazeGain: { type: 'number', value: 2, min: 0.5, max: 8, step: 0.05, label: 'dot haze strength' },
-  dotHazeOpacity: { type: 'number', value: 0.8, min: 0, max: 1, step: 0.01, label: 'dot haze opacity' },
-  dotHazeEdge: { type: 'number', value: 0.3, min: 0, max: 1, step: 0.01, label: 'dot haze edge (fog → pools)' },
+  dotHaze: { type: 'number', value: 6, min: 0, max: 80, step: 0.5, label: 'haze size (0 = off)' },
+  dotHazeStretch: { type: 'number', value: 1, min: 1, max: 12, step: 0.1, label: 'stretch' },
+  dotHazeGain: { type: 'number', value: 2, min: 0.5, max: 8, step: 0.05, label: 'strength' },
+  dotHazeOpacity: { type: 'number', value: 0.8, min: 0, max: 1, step: 0.01, label: 'opacity' },
+  dotHazeEdge: { type: 'number', value: 0.3, min: 0, max: 1, step: 0.01, label: 'edge (fog → pools)' },
   dotHazeFrom: {
-    type: 'select', value: 'hair', label: 'dot haze from weight',
+    type: 'select', value: 'hair', label: 'from',
     options: { hairline: 'hair', medium: 'medium', heavy: 'heavy', solid: 'solid' },
   },
 
   chars: {
-    type: 'select', value: 'keep', label: 'sub-mode characters',
+    type: 'select', value: 'keep', label: 'characters',
     options: { 'as the sub-mode draws them': 'keep', 'remove them': 'none', 'my characters': 'custom' },
   },
   charText: { type: 'text', value: '·+x#&@', label: 'my characters (light → heavy)', show: true },
@@ -115,27 +115,28 @@ export const finishParams: ParamSchema = {
     options: { 'by weight (light → heavy)': 'weight', 'in turn': 'cycle', random: 'random', 'one per stem': 'stem' },
     showIf: { key: 'marksAs', is: ['chars', 'both'] },
   },
-  charSize: { type: 'number', value: 1.2, min: 0.2, max: 4, step: 0.01, label: 'character size (× mark)', showIf: { key: 'marksAs', is: ['chars', 'both'] } },
-  charMin: { type: 'number', value: 1, min: 0, max: 40, step: 0.5, label: 'skip marks under (px)', showIf: { key: 'marksAs', is: ['chars', 'both'] } },
+  charSize: { type: 'number', value: 1.2, min: 0.2, max: 4, step: 0.01, label: 'character size', showIf: { key: 'marksAs', is: ['chars', 'both'] } },
+  charMin: { type: 'number', value: 1, min: 0, max: 40, step: 0.5, label: 'skip tiny marks (px)', showIf: { key: 'marksAs', is: ['chars', 'both'] } },
 }
 
 /** Panel groups: the buckets for every sub-mode; colour, shape and haze for all but Dots (it has its own). */
-export function finishGroups(sub: string): Record<string, string[]> {
+export function finishGroups(sub: string, own: Record<string, string[]> = {}): Record<string, string[]> {
   const buckets = {
-    'Stems (buckets of sound)': ['vocals', 'instruments', 'drums', 'bass'],
+    Stems: ['vocals', 'instruments', 'drums', 'bass'],
+    Recolour: ['colour', 'colourOffset', 'colourDepth'],
     'Gradient map': ['gradOn', 'gradShape', 'gradRepeat', 'gradX0', 'gradY0', 'gradX1', 'gradY1', 'gradWeight'],
     Mask: ['maskOn', 'maskWhat', 'maskStrength', 'maskInvert', 'brushSize', 'brushSoft'],
     Characters: ['chars', 'charText', 'marksAs', 'charOrder', 'charSize', 'charMin'],
   }
-  // Dots has its own shape and haze; the shared colour too (so a look made on Ledger carries over).
-  if (sub === 'dots') return { ...buckets, 'Colour (shared with the other sub-modes)': ['colour', 'colourOffset', 'colourDepth'] }
+  // Dots has its own shape and haze.
+  if (sub === 'dots') return buckets
   return {
     ...buckets,
-    'Dot grid (as Dots)': ['dotGrid', 'gridAcross', 'gridSize', 'gridContrast', 'gridSolid', 'gridGhost', 'gridHaze'],
-    'Dot haze': ['dotHaze', 'dotHazeStretch', 'dotHazeGain', 'dotHazeOpacity', 'dotHazeEdge', 'dotHazeFrom'],
-    'Colour (as Dots)': ['colour', 'colourOffset', 'colourDepth'],
-    'Mark shape (as Dots)': dotShapeKeys,
-    'Haze (as Dots)': hazeKeys,
+    'Dot grid': ['dotGrid', 'gridAcross', 'gridSize', 'gridContrast', 'gridSolid', 'gridGhost', 'gridHaze'],
+    'Dot grid haze': ['dotHaze', 'dotHazeStretch', 'dotHazeGain', 'dotHazeOpacity', 'dotHazeEdge', 'dotHazeFrom'],
+    'Mark shape': dotShapeKeys,
+    // (Barcode has a haze of its own.)
+    [own.Haze ? 'Dot haze' : 'Haze']: hazeKeys,
   }
 }
 

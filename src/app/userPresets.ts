@@ -20,6 +20,8 @@ export interface SavedPreset {
   tracking: number
   /** The camera when it was saved (zoom, and the pan in frame widths / heights); older presets have none. */
   view?: { zoom: number; x: number; y: number }
+  /** A small picture of the frame it was saved from (data URL), for the Presets card. */
+  thumb?: string
   savedAt: string
 }
 
@@ -102,6 +104,14 @@ export function savePreset(modeId: string, name: string) {
     view: { ...state.view },
     savedAt: new Date().toISOString(),
   }
+  persist()
+}
+
+/** Give a saved preset its picture (keeps its date: it's the same look). */
+export function setThumb(modeId: string, name: string, thumb: string) {
+  const p = store[modeId]?.[name]
+  if (!p) return
+  p.thumb = thumb
   persist()
 }
 

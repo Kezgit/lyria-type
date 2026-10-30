@@ -5,7 +5,8 @@ import type { Engine } from '../engine/engine'
 // ctrl / cmd + wheel) zooms about the pointer, a two-finger swipe (or the
 // wheel) pans; the hand tool (H, or hold space) drags to pan; cmd / ctrl + and
 // − zoom, cmd / ctrl 0 fits. Writes state.view (zoom, and the pan in frame
-// widths / heights), which the preview and exports both show. Otherwise clicks
+// widths / heights), which the preview and exports both show. A quick tap of
+// space (no drag) plays or pauses the music instead. Otherwise clicks
 // and drags pick letters (picker.ts); an option-drag (or the middle button)
 // pans too, and an option-double-click resets.
 
@@ -15,6 +16,12 @@ const MIN = MIN_ZOOM, MAX = MAX_ZOOM
 /** The hand tool: on from the toolbar (or H), or while space is held. Dragging then pans, not picks. */
 export const viewTool = { hand: false, space: false }
 export const panning = () => viewTool.hand || viewTool.space
+
+let spaceTap: () => void = () => {}
+/** What a quick tap of space does (play / pause). */
+export function onSpaceTap(fn: () => void) {
+  spaceTap = fn
+}
 
 /** Zoom by `k` about a picture point (px from the frame's centre, y up; default the middle of the view). */
 export function zoomBy(engine: Engine, k: number, at?: { sx: number; sy: number }) {
@@ -58,13 +65,19 @@ export function attachView(engine: Engine, changed: () => void) {
   }, { passive: false })
 
   // Keys: space held = hand, H = hand tool, V = back to picking, cmd / ctrl + − 0 = zoom in, out, fit.
+  // (Checkboxes, sliders and buttons keep focus after a click: space still plays for them.)
   const typing = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement | null
-    return !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
+    if (!t) return false
+    if (t.isContentEditable || /^(TEXTAREA|SELECT)$/.test(t.tagName)) return true
+    return t.tagName === 'INPUT' && !/^(checkbox|radio|range|button|color|file)$/.test((t as HTMLInputElement).type)
   }
+  // Space down then up quickly, without panning: a tap.
+  let spaceDown = 0, spacePanned = false
   window.addEventListener('keydown', (e) => {
     if (typing(e)) return
-    if (e.code === 'Space' && !e.repeat) { viewTool.space = true; canvas.style.cursor = 'grab'; e.preventDefault(); changed() }
+    if (e.code === 'Space') e.preventDefault()
+    if (e.code === 'Space' && !e.repeat) { viewTool.space = true; spaceDown = performance.now(); spacePanned = false; canvas.style.cursor = 'grab'; changed() }
     else if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) { zoomBy(engine, 1.25); e.preventDefault(); changed() }
     else if ((e.metaKey || e.ctrlKey) && e.key === '-') { zoomBy(engine, 0.8); e.preventDefault(); changed() }
     else if ((e.metaKey || e.ctrlKey) && e.key === '0') { Object.assign(view, { zoom: 1, x: 0, y: 0 }); e.preventDefault(); changed() }
@@ -72,7 +85,11 @@ export function attachView(engine: Engine, changed: () => void) {
     else if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'v' || e.key === 'V')) { viewTool.hand = false; changed() }
   })
   window.addEventListener('keyup', (e) => {
-    if (e.code === 'Space') { viewTool.space = false; changed() }
+    if (e.code !== 'Space' || !viewTool.space) return
+    viewTool.space = false
+    changed()
+    e.preventDefault()
+    if (!spacePanned && performance.now() - spaceDown < 350) spaceTap()
   })
 
   /** Whether a press is the view's, not the letter picker's. */
@@ -85,6 +102,7 @@ export function attachView(engine: Engine, changed: () => void) {
   })
   canvas.addEventListener('pointermove', (e) => {
     if (!drag) return
+    if (viewTool.space) spacePanned = true
     const r = canvas.getBoundingClientRect()
     view.x -= (e.clientX - drag.x) / r.width / view.zoom
     view.y += (e.clientY - drag.y) / r.height / view.zoom
