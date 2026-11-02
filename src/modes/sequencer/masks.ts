@@ -30,6 +30,11 @@ import type { FrameContext } from '../types'
 // ease (or run straight, or hold), and the mask springs after them as it
 // does after a drag.
 //
+// Anchor point: where a mask is placed (x, y) is its anchor; the shape sits
+// round it (ax, ay: -1..1 across its width and height from its centre, down
+// and right as seen; 0, 0 = the centre). It scales and turns about the anchor,
+// so a circle anchored at its centre grows from there.
+//
 // Masks are kept as text in the Sequencer's `masks` setting (saved with
 // presets and scenes), the timeline's length and play in `maskTimeline`.
 // Positions and sizes are in frame heights from the frame's centre (y up);
@@ -38,7 +43,7 @@ import type { FrameContext } from '../types'
 export type MaskShape = 'circle' | 'square' | 'rounded'
 
 /** What keyframes animate. */
-export const ANIMATED = ['x', 'y', 'w', 'h', 'r', 'strength', 'margin', 'soft', 'stroke', 'spacing', 'round'] as const
+export const ANIMATED = ['x', 'y', 'w', 'h', 'r', 'ax', 'ay', 'strength', 'margin', 'soft', 'stroke', 'spacing', 'round'] as const
 export type Animated = (typeof ANIMATED)[number]
 export type Ease = 'ease' | 'linear' | 'hold'
 
@@ -62,6 +67,9 @@ export interface Mask {
   h: number
   /** Degrees, clockwise on screen. */
   r: number
+  /** The anchor within the shape (where x, y is): -1..1 of its half width / height, right and down. */
+  ax: number
+  ay: number
   /** Width and height scale together (the panel's sliders). */
   lock: boolean
   /** Corner roundness (rounded), 0..1 of the short side's half. */
@@ -100,9 +108,17 @@ export const SHAPES: { id: MaskShape; label: string }[] = [
 export function newMask(shape: MaskShape, n: number): Mask {
   return {
     id: Math.random().toString(36).slice(2, 9), name: `${SHAPES.find((s) => s.id === shape)!.label} ${n}`, on: true, shape,
-    x: 0, y: 0, w: 0.3, h: 0.3, r: 0, lock: true, round: 0.5, invert: false, stroke: 0, repeat: 1, spacing: 0.08,
+    x: 0, y: 0, w: 0.3, h: 0.3, r: 0, ax: 0, ay: 0, lock: true, round: 0.5, invert: false, stroke: 0, repeat: 1, spacing: 0.08,
     margin: 0.02, soft: 0.08, strength: 1, squash: 0.3, wobble: 0.2, follow: 0.5, pulse: 0.15, stem: 'all', keys: [],
   }
+}
+
+/** The shape's centre (frame heights, y up), from its anchor (x, y), size, turn and the anchor's place in it. */
+export function centreOf(v: { x: number; y: number; w: number; h: number; r: number; ax: number; ay: number }) {
+  // The anchor's offset from the centre (right / down as seen), turned with the shape, in y-up units.
+  const ox = (v.ax * v.w) / 2, oy = (-v.ay * v.h) / 2
+  const t = (-v.r * Math.PI) / 180
+  return { x: v.x - (ox * Math.cos(t) - oy * Math.sin(t)), y: v.y - (ox * Math.sin(t) + oy * Math.cos(t)) }
 }
 
 /** A mask's animated values now (its own, when it has no keys). */
@@ -361,9 +377,11 @@ export function applyMasks(frame: FrameContext, text: unknown, timelineSettings?
     const l = step(m, frame.dt, frame.audio)
     const k = 1 + l.swell
     const t = (-l.r * Math.PI) / 180
+    // (It swells and turns about its anchor too.)
+    const c = centreOf({ x: l.x, y: l.y, w: l.w * k, h: l.h * k, r: l.r, ax: m.ax, ay: m.ay })
     return {
       shape: m.shape, round: m.round,
-      cx: l.x * H, cy: l.y * H, hw: Math.max(1, (l.w * H * k) / 2), hh: Math.max(1, (l.h * H * k) / 2),
+      cx: c.x * H, cy: c.y * H, hw: Math.max(1, (l.w * H * k) / 2), hh: Math.max(1, (l.h * H * k) / 2),
       // Undo the turn (clockwise on screen = counter-clockwise in y-up), into the mask's frame.
       cos: Math.cos(t), sin: -Math.sin(t),
       invert: m.invert, stroke: Math.max(0, m.stroke * H), repeat: Math.max(1, Math.round(m.repeat)), spacing: m.spacing * H,

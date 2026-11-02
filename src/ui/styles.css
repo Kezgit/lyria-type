@@ -889,3 +889,6 @@ html, body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inte
 .mtl-diamond.on { background: #fff; box-shadow: 0 0 0 2px #2f6fe4; }
 .mtl-playhead { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: -0.5px; background: #ff5a59; pointer-events: none; }
 .mtl-playhead::before { content: ''; position: absolute; top: 0; left: -4px; width: 9px; height: 9px; border-radius: 0 0 4px 4px; background: #ff5a59; }
+.masks-overlay .masks-anchor { pointer-events: all; cursor: move; }
+.masks-overlay .masks-anchor circle, .masks-overlay .masks-anchor path { fill: none; stroke: #fff; stroke-width: 1.5; filter: drop-shadow(0 0 1.5px rgb(0 0 0 / 0.8)); }
+.masks-overlay .masks-anchor .masks-anchor-hit { fill: transparent; stroke: none; filter: none; }

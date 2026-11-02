@@ -1,7 +1,7 @@
 import { Pane } from 'tweakpane'
 import { state } from '../app/state'
 import type { Engine } from '../engine/engine'
-import { ANIMATED, SHAPES, decodeMasks, encodeMasks, encodeTimeline, liveMask, maskAt, newMask, setAt, timeline, type Animated, type Mask, type MaskShape } from '../modes/sequencer/masks'
+import { ANIMATED, SHAPES, centreOf, decodeMasks, encodeMasks, encodeTimeline, liveMask, maskAt, newMask, setAt, timeline, type Animated, type Mask, type MaskShape } from '../modes/sequencer/masks'
 import { buildMaskTimeline } from './maskTimeline'
 
 // The Masks card: invisible shapes that push the Sequencer's marks aside
@@ -10,8 +10,10 @@ import { buildMaskTimeline } from './maskTimeline'
 // picked layer's settings sit under the list. While the card is open, each
 // mask shows on the stage as a dashed outline (its margin and reach fainter
 // round it), to drag about; the picked one gets a box to scale and stretch by
-// its handles (shift keeps the shape, alt from the centre) and turn from just
-// outside a corner (shift: 15° steps). Clicks anywhere else go through to the
+// its handles, about its anchor point (alt: from the opposite side; shift keeps
+// the shape), and turn about the anchor from just outside a corner (shift: 15°
+// steps). The anchor shows as a crosshair: drag it to move the anchor without
+// moving the shape (shift snaps it to the centre, edges and corners). Clicks anywhere else go through to the
 // stage as usual (Outlines: off hides the dashed shapes, leaving the picked
 // one's box). ⌘Z / ⇧⌘Z undo and redo mask changes while the card is open.
 // Timeline opens the masks' keyframe timeline (ui/maskTimeline.ts): once a
@@ -281,7 +283,15 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
           refreshing = false
         }
       }
-      change(target, { [key]: e[key], ...(key === 'w' || key === 'h' ? { w: e.w, h: e.h } : {}) })
+      // Moving the anchor leaves the shape where it is: the anchor's place on the stage moves instead.
+      if (key === 'ax' || key === 'ay') {
+        const c = centreOf(was)
+        const ox = (e.ax * was.w) / 2, oy = (-e.ay * was.h) / 2
+        const t = (-was.r * Math.PI) / 180
+        e.x = c.x + ox * Math.cos(t) - oy * Math.sin(t)
+        e.y = c.y + ox * Math.sin(t) + oy * Math.cos(t)
+        change(target, { ax: e.ax, ay: e.ay, x: e.x, y: e.y })
+      } else change(target, { [key]: e[key], ...(key === 'w' || key === 'h' ? { w: e.w, h: e.h } : {}) })
       if (last) commit()
       else write()
       renderList()
@@ -300,6 +310,14 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
     add(shape, 'w', { label: 'width', min: 0.01, max: 3, step: 0.001 })
     add(shape, 'h', { label: 'height', min: 0.01, max: 3, step: 0.001 })
     add(shape, 'r', { label: 'rotation (°)', min: -180, max: 180, step: 0.5 })
+    add(shape, 'ax', { label: 'anchor x (−1 left, 1 right)', min: -1, max: 1, step: 0.01 })
+    add(shape, 'ay', { label: 'anchor y (−1 top, 1 bottom)', min: -1, max: 1, step: 0.01 })
+    shape.addButton({ title: 'Anchor to the centre' }).on('click', () => {
+      e.ax = 0
+      e.ay = 0
+      apply('ax', true)
+      refreshSettings()
+    })
     add(shape, 'invert', { label: 'invert (show inside)' })
     const push = pane.addFolder({ title: 'Push' })
     add(push, 'strength', { label: 'strength', min: 0, max: 1, step: 0.01 })
@@ -369,10 +387,12 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
     const rr = m.shape === 'rounded' ? Math.min(b.hw, b.hh) * m.round + grow : grow
     return el('rect', { x: b.cx - hw, y: b.cy - hh, width: Math.max(1, 2 * hw), height: Math.max(1, 2 * hh), rx: Math.max(0, rr), transform: t, ...attrs })
   }
+  /** A mask's box on the stage: its centre, half size, turn, and its anchor point. */
   const boxOf = (m: Mask, G = geom(), sprung = false) => {
     const v = sprung ? liveMask(m) : now(m)
-    const c = G.toStage(v.x, v.y)
-    return { cx: c.x, cy: c.y, hw: (v.w / 2) * G.s, hh: (v.h / 2) * G.s, a: v.r }
+    const c = G.toStage(centreOf(v).x, centreOf(v).y)
+    const a = G.toStage(v.x, v.y)
+    return { cx: c.x, cy: c.y, hw: (v.w / 2) * G.s, hh: (v.h / 2) * G.s, a: v.r, px: a.x, py: a.y }
   }
   const corner = (b: ReturnType<typeof boxOf>, ux: number, uy: number) => {
     const p = rot(ux * b.hw, uy * b.hh, b.a)
@@ -421,16 +441,24 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
         ;(h as SVGElement).style.cursor = ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][dir]
         h.addEventListener('pointerdown', (e) => start(e as PointerEvent, base, [ux, uy]))
       }
+      // The anchor point, as After Effects draws it: a ring with a cross.
+      const anchor = document.createElementNS(SVG_NS, 'g')
+      anchor.setAttribute('class', 'masks-anchor')
+      g.appendChild(anchor)
+      el('circle', { cx: b.px, cy: b.py, r: 9, class: 'masks-anchor-hit' }, anchor)
+      el('circle', { cx: b.px, cy: b.py, r: 4.5 }, anchor)
+      el('path', { d: `M${b.px - 9} ${b.py}H${b.px - 4.5}M${b.px + 4.5} ${b.py}H${b.px + 9}M${b.px} ${b.py - 9}V${b.py - 4.5}M${b.px} ${b.py + 4.5}V${b.py + 9}` }, anchor)
+      anchor.addEventListener('pointerdown', (e) => start(e as PointerEvent, base, 'anchor'))
     }
   }
 
   // --- Dragging ------------------------------------------------------------------------------------
-  let drag: { m: Mask; what: 'move' | 'rotate' | Handle; x0: number; y0: number; m0: Mask; b0: ReturnType<typeof boxOf> } | null = null
+  let drag: { m: Mask; what: 'move' | 'rotate' | 'anchor' | Handle; x0: number; y0: number; m0: Mask; b0: ReturnType<typeof boxOf> } | null = null
   const point = (e: PointerEvent) => {
     const r = stage.getBoundingClientRect()
     return { x: e.clientX - r.left, y: e.clientY - r.top }
   }
-  function start(e: PointerEvent, m: Mask, what: 'move' | 'rotate' | Handle) {
+  function start(e: PointerEvent, m: Mask, what: 'move' | 'rotate' | 'anchor' | Handle) {
     if (e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
@@ -453,28 +481,46 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
     if (drag.what === 'move') {
       change(m, { x: m0.x + (x - drag.x0) / G.s, y: m0.y - (y - drag.y0) / G.s })
     } else if (drag.what === 'rotate') {
-      let d = ((Math.atan2(y - b0.cy, x - b0.cx) - Math.atan2(drag.y0 - b0.cy, drag.x0 - b0.cx)) * 180) / Math.PI
+      // About the anchor.
+      let d = ((Math.atan2(y - b0.py, x - b0.px) - Math.atan2(drag.y0 - b0.py, drag.x0 - b0.px)) * 180) / Math.PI
       if (e.shiftKey) d = Math.round((m0.r + d) / 15) * 15 - m0.r
       change(m, { r: ((((m0.r + d) % 360) + 540) % 360) - 180 })
+    } else if (drag.what === 'anchor') {
+      // The anchor moves; the shape stays where it is (shift: onto the centre, an edge or a corner).
+      let l = rot(x - b0.cx, y - b0.cy, -b0.a)
+      let ax = l.x / Math.max(1, b0.hw), ay = l.y / Math.max(1, b0.hh)
+      if (e.shiftKey) {
+        ax = Math.max(-1, Math.min(1, Math.round(ax)))
+        ay = Math.max(-1, Math.min(1, Math.round(ay)))
+        l = { x: ax * b0.hw, y: ay * b0.hh }
+      }
+      const p = rot(l.x, l.y, b0.a)
+      const u = G.toUnits(b0.cx + p.x, b0.cy + p.y)
+      change(m, { x: u.X, y: u.Y, ax, ay })
     } else {
       const [ux, uy] = drag.what
       const p = rot(x - b0.cx, y - b0.cy, -b0.a)
-      const fromCentre = e.altKey
-      const ax = fromCentre ? 0 : -ux * b0.hw, ay = fromCentre ? 0 : -uy * b0.hh
-      let hw = ux ? Math.abs(p.x - ax) / (fromCentre ? 1 : 2) : b0.hw
-      let hh = uy ? Math.abs(p.y - ay) / (fromCentre ? 1 : 2) : b0.hh
+      // In the box's own frame: the anchor, and the handle as it was.
+      const A = { x: m0.ax * b0.hw, y: m0.ay * b0.hh }
+      const Hx = ux * b0.hw, Hy = uy * b0.hh
+      // About the anchor; from the opposite side with alt, or when the anchor's on this handle's side.
+      const opposite = e.altKey || (ux && Math.abs(Hx - A.x) < 1) || (uy && Math.abs(Hy - A.y) < 1)
+      const P = opposite ? { x: -Hx, y: -Hy } : A
+      let fx = ux ? (p.x - P.x) / (Hx - P.x) : 1
+      let fy = uy ? (p.y - P.y) / (Hy - P.y) : 1
       // Shift keeps the proportions; so do the corners of a mask set to keep them.
-      if (e.shiftKey || (m.lock && ux && uy)) {
-        const k = Math.max(ux ? hw / b0.hw : 0, uy ? hh / b0.hh : 0)
-        hw = b0.hw * k
-        hh = b0.hh * k
-      }
-      hw = Math.max(3, hw)
-      hh = Math.max(3, hh)
-      const lc = { x: fromCentre || !ux ? 0 : ax + Math.sign(p.x - ax || ux) * hw, y: fromCentre || !uy ? 0 : ay + Math.sign(p.y - ay || uy) * hh }
-      const c = rot(lc.x, lc.y, b0.a)
-      const u = G.toUnits(b0.cx + c.x, b0.cy + c.y)
-      change(m, { x: u.X, y: u.Y, w: (2 * hw) / G.s, h: (2 * hh) / G.s })
+      if (e.shiftKey || (m.lock && ux && uy)) fx = fy = Math.max(ux ? fx : -Infinity, uy ? fy : -Infinity)
+      fx = Math.max(0.02, fx)
+      fy = Math.max(0.02, fy)
+      const hw = Math.max(3, b0.hw * fx), hh = Math.max(3, b0.hh * fy)
+      if (opposite) {
+        // The pinned side stays put: a new centre, and the anchor at its place in the new size.
+        const lc = { x: ux ? P.x + (Hx - P.x) * fx * 0.5 : 0, y: uy ? P.y + (Hy - P.y) * fy * 0.5 : 0 }
+        const la = { x: lc.x + m0.ax * hw, y: lc.y + m0.ay * hh }
+        const c = rot(la.x, la.y, b0.a)
+        const u = G.toUnits(b0.cx + c.x, b0.cy + c.y)
+        change(m, { x: u.X, y: u.Y, w: (2 * hw) / G.s, h: (2 * hh) / G.s })
+      } else change(m, { w: (2 * hw) / G.s, h: (2 * hh) / G.s })
     }
     write()
     refreshSettings()
