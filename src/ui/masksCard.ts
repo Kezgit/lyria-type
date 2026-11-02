@@ -1,7 +1,7 @@
 import { Pane } from 'tweakpane'
 import { state } from '../app/state'
 import type { Engine } from '../engine/engine'
-import { ANIMATED, SHAPES, decodeMasks, encodeMasks, liveMask, maskAt, newMask, setAt, timeline, type Animated, type Mask, type MaskShape } from '../modes/sequencer/masks'
+import { ANIMATED, SHAPES, decodeMasks, encodeMasks, encodeTimeline, liveMask, maskAt, newMask, setAt, timeline, type Animated, type Mask, type MaskShape } from '../modes/sequencer/masks'
 import { buildMaskTimeline } from './maskTimeline'
 
 // The Masks card: invisible shapes that push the Sequencer's marks aside
@@ -55,7 +55,17 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
   const undo: string[] = []
   const redo: string[] = []
   let before: string | null = null
-  const begin = () => (before ??= encodeMasks(list))
+  // One edit (a drag, a slider move) lands at one time: the playhead's when it began, to the frame. Keyed
+  // masks pause the timeline while they're edited, so a drag doesn't leave a key at every step.
+  let editT: number | null = null
+  const begin = () => {
+    if (before === null && timeline.playing && list.some((m) => m.keys.length)) {
+      timeline.playing = false
+      values().maskTimeline = encodeTimeline()
+    }
+    editT ??= Math.round(timeline.t * 30) / 30
+    before ??= encodeMasks(list)
+  }
   const commit = () => {
     if (before !== null && before !== encodeMasks(list)) {
       undo.push(before)
@@ -63,6 +73,7 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
       redo.length = 0
     }
     before = null
+    editT = null
     write()
   }
   const step = (from: string[], to: string[]) => {
@@ -85,7 +96,7 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
       if ((ANIMATED as readonly string[]).includes(k)) keyed[k as Animated] = v as number
       else (m as any)[k] = v
     }
-    setAt(m, timeline.t, keyed)
+    setAt(m, editT ?? Math.round(timeline.t * 30) / 30, keyed)
   }
 
   // --- The card ---------------------------------------------------------------------------------
@@ -263,7 +274,12 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
         const k = key === 'w' ? e.w / Math.max(1e-6, was.w) : e.h / Math.max(1e-6, was.h)
         if (key === 'w') e.h = was.h * k
         else e.w = was.w * k
-        pane?.refresh()
+        refreshing = true
+        try {
+          pane?.refresh()
+        } finally {
+          refreshing = false
+        }
       }
       change(target, { [key]: e[key], ...(key === 'w' || key === 'h' ? { w: e.w, h: e.h } : {}) })
       if (last) commit()
@@ -272,6 +288,8 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
     }
     const add = (folder: any, key: keyof Mask, opts: Record<string, unknown>) =>
       folder.addBinding(e, key, opts).on('change', (ev: { last: boolean }) => {
+        // (A refresh showing the mask as it moves isn't an edit.)
+        if (refreshing) return
         apply(key, ev.last)
         if (key === 'shape' || key === 'stroke' || key === 'repeat') renderSettings()
       })
@@ -298,12 +316,18 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
     add(life, 'pulse', { label: 'swells with music', min: 0, max: 1, step: 0.01 })
     add(life, 'stem', { label: 'with', options: { 'all of it': 'all', vocals: 'vocals', instruments: 'instruments', drums: 'drums', bass: 'bass' } })
   }
-  // Moved on the stage, or the playhead moved: the settings show it.
+  // Moved on the stage, or the playhead moved: the settings show it (without that counting as a change).
+  let refreshing = false
   const refreshSettings = () => {
     const m = current()
     if (!m || !editing || !pane) return
     Object.assign(editing, now(m))
-    pane.refresh()
+    refreshing = true
+    try {
+      pane.refresh()
+    } finally {
+      refreshing = false
+    }
   }
 
   // --- The stage: outlines to drag, a box on the picked one ------------------------------------------

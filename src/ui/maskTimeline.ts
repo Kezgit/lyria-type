@@ -7,8 +7,8 @@ import { encodeTimeline, maskAt, timeline, valuesOf, type Ease, type Mask } from
 //   ◆ Key      a key on the picked mask at the playhead, as it is now; once a
 //              mask has keys, every change to it (on the stage or in the card)
 //              lands as a key at the playhead
-//   a key      click to go to it (and pick it); drag to retime (shift: 0.1 s
-//              steps); its ease sets how it moves on to the next: ease (in and
+//   a key      click to go to it (and pick it); drag to retime, by frames
+//              (shift: 0.1 s steps); its ease sets how it moves on to the next: ease (in and
 //              out), linear, or hold; ⌫ deletes it
 // Keys animate a mask's place, size, turn, push and rings (masks.ts ANIMATED).
 
@@ -57,11 +57,14 @@ export function buildMaskTimeline(stage: HTMLElement, host: TimelineHost) {
   for (const e of EASES) easeSelect.appendChild(Object.assign(document.createElement('option'), { value: e.id, textContent: e.label }))
   const delKey = document.createElement('button')
   delKey.textContent = 'Delete key'
+  const clearKeys = document.createElement('button')
+  clearKeys.textContent = 'Clear keys'
+  clearKeys.title = 'Remove every key on the picked mask (it stays as it is at the playhead)'
   const close = document.createElement('button')
   close.className = 'mtl-close'
   close.textContent = '×'
   close.title = 'Close the timeline'
-  bar.append(play, clock, lengthLabel, addKey, easeSelect, delKey, close)
+  bar.append(play, clock, lengthLabel, addKey, easeSelect, delKey, clearKeys, close)
 
   const body = document.createElement('div')
   body.className = 'mtl-body'
@@ -97,8 +100,9 @@ export function buildMaskTimeline(stage: HTMLElement, host: TimelineHost) {
   addKey.addEventListener('click', () => {
     const m = host.list().find((x) => x.id === host.picked())
     if (!m) return
-    const t = Math.round(timeline.t * 100) / 100
-    const at = m.keys.find((k) => Math.abs(k.t - t) < 1e-3)
+    // (On the frame grid, as edits are: 30 a second.)
+    const t = Math.round(timeline.t * 30) / 30
+    const at = m.keys.find((k) => Math.abs(k.t - t) < 1 / 60)
     // A key holds the mask as it is at the playhead (already one there: just pick it).
     if (!at) {
       host.begin()
@@ -131,6 +135,17 @@ export function buildMaskTimeline(stage: HTMLElement, host: TimelineHost) {
     render(true)
   }
   delKey.addEventListener('click', removeKey)
+  clearKeys.addEventListener('click', () => {
+    const m = host.list().find((x) => x.id === host.picked())
+    if (!m?.keys.length || !confirm(`Remove all ${m.keys.length} keys on “${m.name}”? It stays as it is at the playhead.`)) return
+    host.begin()
+    Object.assign(m, maskAt(m, timeline.t))
+    m.keys = []
+    sel = null
+    host.commit()
+    host.changed()
+    render(true)
+  })
   close.addEventListener('click', () => toggle(false))
   window.addEventListener('keydown', (e) => {
     if (!open || !sel || (e.key !== 'Backspace' && e.key !== 'Delete')) return
@@ -236,10 +251,10 @@ export function buildMaskTimeline(stage: HTMLElement, host: TimelineHost) {
           host.begin()
           const move = (ev: PointerEvent) => {
             let t = timeAt(ev.clientX)
-            if (ev.shiftKey) t = Math.round(t * 10) / 10
+            t = ev.shiftKey ? Math.round(t * 10) / 10 : Math.round(t * 30) / 30
             // Not onto another key.
             if (m.keys.some((o) => o !== k && Math.abs(o.t - t) < 0.01)) return
-            k.t = Math.round(t * 1000) / 1000
+            k.t = t
             sel = { id: m.id, t: k.t }
             timeline.t = k.t
             m.keys.sort((a, b) => a.t - b.t)
@@ -273,7 +288,9 @@ export function buildMaskTimeline(stage: HTMLElement, host: TimelineHost) {
     const k = selKey()
     easeSelect.disabled = delKey.disabled = !k
     if (k && easeSelect.value !== k.ease) easeSelect.value = k.ease
-    addKey.disabled = !host.list().some((m) => m.id === host.picked())
+    const pickedMask = host.list().find((m) => m.id === host.picked())
+    addKey.disabled = !pickedMask
+    clearKeys.disabled = !pickedMask?.keys.length
   }
   frame()
 

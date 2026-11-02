@@ -135,7 +135,8 @@ export function setAt(m: Mask, t: number, values: Partial<Record<Animated, numbe
     Object.assign(m, values)
     return
   }
-  let key = m.keys.find((k) => Math.abs(k.t - t) < 1e-3)
+  // (Within half a frame: the same key.)
+  let key = m.keys.find((k) => Math.abs(k.t - t) < 1 / 60)
   if (!key) {
     key = { t, ease: 'ease', v: valuesOf(maskAt(m, t)) }
     m.keys.push(key)
@@ -181,7 +182,7 @@ const round4 = (_: string, v: unknown) => (typeof v === 'number' ? Math.round(v 
 export const encodeMasks = (masks: Mask[]) => JSON.stringify(masks, round4)
 
 /** The masks' timeline: its length (s), whether it plays, and where it is. Length and play are saved. */
-export const timeline = { t: 0, playing: true, dur: 4 }
+export const timeline = { t: 0, playing: false, dur: 4 }
 let timelineText = ''
 export function readTimeline(text: unknown) {
   if (typeof text !== 'string' || text === timelineText) return
