@@ -103,5 +103,16 @@ buildRecorder(document.getElementById('stage')!, engine.canvas, audio, async () 
   emit('audio')
 })
 
+// Record, back to the start and play sit together just left of the toolbar at the bottom
+// (clear of the corner, where a host's badge can sit).
+const stage = document.getElementById('stage')!
+const bottom = document.createElement('div')
+bottom.className = 'bottom-bar'
+const transportGroup = document.createElement('div')
+transportGroup.className = 'transport-group'
+transportGroup.append(...[stage.querySelector('.record'), restart, transport].filter((b): b is HTMLElement => !!b))
+bottom.append(transportGroup, stage.querySelector('.toolbar')!)
+stage.appendChild(bottom)
+
 // Handy for poking at the scene from devtools.
 if (import.meta.env.DEV) Object.assign(window, { engine, audio, state })

@@ -691,3 +691,22 @@ html, body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inte
 .card .rack-shapes button { padding: 6px 9px; border: 0; border-radius: 7px; background: var(--panel-input); color: #b9bcc3; font: 600 10.5px/1 inherit; font-family: inherit; }
 .card .rack-shapes button.on { background: var(--panel-fg); color: #0b0c0f; }
 .card .rack-hint { margin-top: 8px; padding: 0; }
+
+/* The bottom bar: record, back to the start and play, then the toolbar, centred. */
+.bottom-bar {
+  position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 6; pointer-events: none;
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px;
+}
+/* (On a narrow window the toolbar wraps onto its own line rather than pushing these off the edge.) */
+.bottom-bar > * { pointer-events: auto; }
+.bottom-bar .toolbar { position: static; transform: none; }
+.transport-group {
+  display: flex; align-items: center; gap: 2px; padding: 4px;
+  background: rgb(20 20 22 / 0.82); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 12px;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+}
+.transport-group > button {
+  position: static; width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent;
+}
+.transport-group > button:hover { background: rgb(255 255 255 / 0.1); }
+.transport-group > .record.on { background: #ff3b30; }
