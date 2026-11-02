@@ -3,6 +3,7 @@ import type { Stem } from '../audio/features'
 import type { Engine } from '../engine/engine'
 import { DEFAULT_SIZE, KINDS, decodePlaced, encodePlaced, type Placed, type PlacedKind } from '../modes/sequencer/placed'
 import { stemColours } from './stemColours'
+import { BLEND_BREAKS, BLEND_MODES } from '../engine/blendFx'
 import { panning } from './view'
 
 // Compose: placing Dots' elements by hand (the Sequencer's Manual style). The
@@ -11,8 +12,10 @@ import { panning } from './view'
 // editable, Figma-style:
 //   empty stage    with an element tool: click to place one, drag to size it;
 //                  with select: drag a box to select
-//   an element     click to select (shift: add / drop), drag to move (alt-drag
-//                  copies); the box's corner / edge handles scale (shift keeps
+//   an element     click to select; shift- or option-click adds it to (or drops
+//                  it from) the selection; drag to move (option-drag copies);
+//                  right-click for its blend mode (Figma's whole list,
+//                  previewed on hover), duplicate, delete, front / back; the box's corner / edge handles scale (shift keeps
 //                  the shape, alt scales from the centre); just outside a
 //                  corner rotates (shift: 15° steps)
 //   the bin        while something is selected, a bin sits just above the
@@ -166,6 +169,21 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
   })
   weightInput.addEventListener('change', () => commit())
 
+  // The selection's blend mode (also on right-click).
+  const blendRow = document.createElement('label')
+  blendRow.className = 'compose-weight compose-blend'
+  blendRow.innerHTML = '<span>blend</span><select></select>'
+  const blendSelect = blendRow.querySelector('select')!
+  BLEND_MODES.forEach((name, i) => {
+    if (BLEND_BREAKS.has(i)) blendSelect.appendChild(Object.assign(document.createElement('option'), { disabled: true, textContent: '──────────' }))
+    blendSelect.appendChild(Object.assign(document.createElement('option'), { value: String(i), textContent: name }))
+  })
+  blendSelect.addEventListener('change', () => {
+    begin()
+    for (const i of selected) list[i].b = Number(blendSelect.value)
+    commit()
+  })
+
   const actions = document.createElement('div')
   actions.className = 'compose-actions'
   const action = (label: string, title: string, run: () => void) => {
@@ -199,7 +217,7 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
   }
   section('Tool', tools)
   section('Plays with', parts)
-  editor.appendChild(weightRow)
+  editor.append(weightRow, blendRow)
   section('Edit', actions)
   editor.appendChild(status)
   page.append(intro, editor)
@@ -220,6 +238,8 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
       b.classList.toggle('on', s === stem)
       b.style.setProperty('--c', cols[s])
     }
+    blendSelect.disabled = !picked.length
+    blendSelect.value = picked.length && picked.every((m) => m.b === picked[0].b) ? String(picked[0].b) : '0'
     weightInput.value = String(weight)
     weightRead.textContent = weight.toFixed(2)
     undoBtn.disabled = !undo.length
@@ -400,7 +420,7 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
 
   // --- Pointer -----------------------------------------------------------------------------
   type Drag =
-    | { kind: 'move'; x0: number; y0: number; start: Placed[]; idx: number[] }
+    | { kind: 'move'; x0: number; y0: number; start: Placed[]; idx: number[]; copy: boolean; toggled: number }
     | { kind: 'scale'; handle: Handle; box: Box; start: Placed[]; idx: number[] }
     | { kind: 'rotate'; box: Box; a0: number; start: Placed[]; idx: number[] }
     | { kind: 'place'; i: number; x0: number; y0: number }
@@ -421,38 +441,41 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
     svg.setPointerCapture(e.pointerId)
     const { x, y } = point(e)
     const box = selectionBox()
-    // Handles first, then rotating, then an element, then the empty stage.
-    const h = box && handleAt(box, x, y)
+    // Handles first, then rotating, then an element, then the empty stage. (With shift, option or cmd held,
+    // a click is about the selection: an element under it comes first, even on a handle.)
+    const picking = (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) && topAt(x, y) >= 0
+    const h = !picking && box && handleAt(box, x, y)
     if (box && h) {
       begin()
       drag = { kind: 'scale', handle: h, box, ...snapshot() }
       return
     }
-    if (box && rotateZone(box, x, y)) {
+    if (!picking && box && rotateZone(box, x, y)) {
       begin()
       drag = { kind: 'rotate', box, a0: Math.atan2(y - box.cy, x - box.cx), ...snapshot() }
       return
     }
     const i = topAt(x, y)
     if (i >= 0) {
-      if (e.shiftKey) {
+      // Shift (or cmd) click: add or drop at once. Option: add now, drop on a click that doesn't drag
+      // (a drag copies the selection instead).
+      let toggled = -1
+      if (e.shiftKey || e.metaKey || e.ctrlKey) {
         if (selected.has(i)) selected.delete(i)
         else selected.add(i)
         renderCard()
         if (!selected.has(i)) return
+      } else if (e.altKey) {
+        if (selected.has(i)) toggled = i
+        else selected.add(i)
+        renderCard()
       } else if (!selected.has(i)) {
         selected.clear()
         selected.add(i)
         renderCard()
       }
       begin()
-      // Alt-drag: drag copies, leaving the originals.
-      if (e.altKey) {
-        const copies = [...selected].map((k) => ({ ...list[k] }))
-        selected.clear()
-        for (const c of copies) selected.add(list.push(c) - 1)
-      }
-      drag = { kind: 'move', x0: x, y0: y, ...snapshot() }
+      drag = { kind: 'move', x0: x, y0: y, ...snapshot(), copy: e.altKey, toggled }
       return
     }
     if (tool === 'select') {
@@ -466,7 +489,7 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
     begin()
     const { X, Y } = geom().toUnits(x, y)
     const [w, hgt] = DEFAULT_SIZE[tool]
-    const m: Placed = { k: tool, s: stem, x: X, y: Y, w, h: hgt, r: 0, lv: weight }
+    const m: Placed = { k: tool, s: stem, x: X, y: Y, w, h: hgt, r: 0, lv: weight, b: 0 }
     selected.clear()
     selected.add(list.push(m) - 1)
     drag = { kind: 'place', i: list.length - 1, x0: x, y0: y }
@@ -493,8 +516,18 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
     }
     const G = geom()
     if (drag.kind === 'move') {
-      bin.classList.toggle('over', overBin(e))
       const d = drag
+      if (Math.hypot(x - d.x0, y - d.y0) < 3 && (d.copy || d.toggled >= 0)) return
+      // Option-drag: the copies move, the originals stay.
+      if (d.copy) {
+        d.copy = false
+        d.toggled = -1
+        selected.clear()
+        d.idx = d.start.map((m) => list.push({ ...m }) - 1)
+        for (const k of d.idx) selected.add(k)
+      }
+      d.toggled = -1
+      bin.classList.toggle('over', overBin(e))
       const dX = (x - d.x0) / G.s, dY = -(y - d.y0) / G.s
       d.idx.forEach((i, k) => {
         list[i].x = d.start[k].x + dX
@@ -547,6 +580,11 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
 
   const end = () => {
     if (!drag) return
+    // An option-click on a selected element (no drag) drops it from the selection.
+    if (drag.kind === 'move' && drag.toggled >= 0) {
+      selected.delete(drag.toggled)
+      renderCard()
+    }
     const kind = drag.kind
     drag = null
     marquee = null
@@ -613,6 +651,99 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
     })
   }
 
+  // --- Right-click: blend modes (previewed on hover), and arranging ------------------------
+  const menu = document.createElement('div')
+  menu.className = 'compose-menu'
+  menu.hidden = true
+  document.body.appendChild(menu)
+  let previewFrom: number[] | null = null
+  const closeMenu = () => {
+    if (menu.hidden) return
+    menu.hidden = true
+    // Hovered but not picked: back as it was.
+    if (previewFrom) {
+      ;[...selected].forEach((i, k) => list[i] && (list[i].b = previewFrom![k]))
+      write()
+    }
+    previewFrom = null
+    before = null
+  }
+  const item = (label: string, run: () => void, opts: { on?: boolean; key?: string; preview?: () => void } = {}) => {
+    const b = document.createElement('button')
+    b.className = opts.on ? 'on' : ''
+    b.innerHTML = `<i>${opts.on ? '✓' : ''}</i><span>${label}</span>${opts.key ? `<kbd>${opts.key}</kbd>` : ''}`
+    b.addEventListener('click', () => run())
+    if (opts.preview) b.addEventListener('pointerenter', opts.preview)
+    menu.appendChild(b)
+  }
+  const line = () => menu.appendChild(Object.assign(document.createElement('hr'), {}))
+  function openMenu(clientX: number, clientY: number) {
+    const picked = [...selected].map((i) => list[i])
+    const current = picked.every((m) => m.b === picked[0].b) ? picked[0].b : -1
+    previewFrom = picked.map((m) => m.b)
+    begin()
+    menu.replaceChildren()
+    const head = document.createElement('header')
+    head.textContent = picked.length > 1 ? `${picked.length} elements · blend` : 'Blend'
+    menu.appendChild(head)
+    BLEND_MODES.forEach((name, i) => {
+      if (BLEND_BREAKS.has(i)) line()
+      item(name, () => {
+        // (Undo goes back to before the menu opened.)
+        for (const k of selected) list[k].b = i
+        previewFrom = null
+        menu.hidden = true
+        commit()
+      }, {
+        on: i === current,
+        preview: () => {
+          for (const k of selected) list[k].b = i
+          write()
+        },
+      })
+    })
+    line()
+    const restoreThen = (run: () => void) => () => {
+      closeMenu()
+      run()
+    }
+    item('Duplicate', restoreThen(() => duplicate(0.02)), { key: '⌘D' })
+    item('Bring to front', restoreThen(() => arrange(true)))
+    item('Send to back', restoreThen(() => arrange(false)))
+    item('Delete', restoreThen(() => remove()), { key: '⌫' })
+    menu.hidden = false
+    const r = menu.getBoundingClientRect()
+    menu.style.left = `${Math.min(clientX, innerWidth - r.width - 8)}px`
+    menu.style.top = `${Math.max(8, Math.min(clientY, innerHeight - r.height - 8))}px`
+  }
+  /** Move the selection to the top (drawn last) or the bottom of the stack. */
+  function arrange(front: boolean) {
+    begin()
+    const picked = list.filter((_, i) => selected.has(i))
+    const rest = list.filter((_, i) => !selected.has(i))
+    list = front ? [...rest, ...picked] : [...picked, ...rest]
+    selected.clear()
+    const from = front ? rest.length : 0
+    picked.forEach((_, k) => selected.add(from + k))
+    commit()
+  }
+  svg.addEventListener('contextmenu', (e) => {
+    e.preventDefault()
+    const { x, y } = point(e as unknown as PointerEvent)
+    const i = topAt(x, y)
+    if (i < 0) return
+    if (!selected.has(i)) {
+      selected.clear()
+      selected.add(i)
+      renderCard()
+    }
+    openMenu(e.clientX, e.clientY)
+  })
+  window.addEventListener('pointerdown', (e) => {
+    if (!menu.hidden && !menu.contains(e.target as Node)) closeMenu()
+  }, true)
+  window.addEventListener('blur', () => closeMenu())
+
   // --- Keys ---------------------------------------------------------------------------------
   const typing = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement | null
@@ -622,7 +753,10 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
   window.addEventListener('keydown', (e) => {
     if (!editing() || typing(e)) return
     const mod = e.metaKey || e.ctrlKey
-    if (e.key === 'Escape' && (selected.size || tool !== 'select')) {
+    if (e.key === 'Escape' && !menu.hidden) {
+      closeMenu()
+      e.stopImmediatePropagation()
+    } else if (e.key === 'Escape' && (selected.size || tool !== 'select')) {
       if (selected.size) selected.clear()
       else tool = 'select'
       renderCard()

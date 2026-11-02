@@ -9,6 +9,7 @@ import { BlurredBarLayer } from './blurLayer'
 import { FieldFx } from './fieldFx'
 import { StretchFx } from './stretchFx'
 import { StencilFx } from './stencilFx'
+import { BlendFx } from './blendFx'
 import { HALO_ATLAS, SdfAtlas } from '../text/atlas/sdfAtlas'
 import { shapeText, type ShapedGlyph, type ShapedText } from '../text/shaping'
 import { ensureFont, getFont } from '../text/fonts/registry'
@@ -64,6 +65,8 @@ export class Engine {
   readonly stretch = new StretchFx()
   /** The frame shown through the typed text (Stencil mode); off unless a mode enables it. */
   readonly stencil: StencilFx
+  /** Marks with their own blend mode (Manual's placed elements), composited over the frame. */
+  readonly blend = new BlendFx()
 
   private text: ShapedText | null = null
   private placements: Placement[] = []
@@ -237,6 +240,7 @@ export class Engine {
     this.back.count = 0
     this.front.count = 0
     this.bars.count = 0
+    this.blend.clear()
     this.barsFar.bars.count = 0
     this.barsMid.bars.count = 0
     this.goo.glyphs.count = 0
@@ -311,7 +315,7 @@ export class Engine {
         layers: {
           backdrop: this.backdrop, back: this.back, bars: this.bars, barsMid: this.barsMid, barsFar: this.barsFar, goo: this.goo, glyphs: this.glyphs,
           outlines: this.outlines, halosMid: this.halosMid, halosFar: this.halosFar,
-          front: this.front, grain: this.grain, stretch: this.stretch, field: this.field, stencil: this.stencil,
+          front: this.front, grain: this.grain, stretch: this.stretch, field: this.field, stencil: this.stencil, blend: this.blend,
         },
       })
     }
@@ -345,7 +349,9 @@ export class Engine {
         this.renderer.render(this.scene, this.camera)
       }
     }
-    if (this.stencil.enabled) this.stencil.render(this.renderer, this.camera, this.viewport, state.background, draw)
-    else draw()
+    // Marks with their own blend mode go over the drawn frame (inside the stencil, when it's on).
+    const drawBlended = () => (this.blend.active ? this.blend.render(this.renderer, this.camera, this.bars, draw) : draw())
+    if (this.stencil.enabled) this.stencil.render(this.renderer, this.camera, this.viewport, state.background, drawBlended)
+    else drawBlended()
   }
 }

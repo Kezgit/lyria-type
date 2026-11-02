@@ -21,6 +21,8 @@ export interface Placed {
   r: number
   /** Resting weight, 0..1: how loud it reads when the music is quiet. */
   lv: number
+  /** Blend mode (index into engine/blendFx.ts BLEND_MODES; 0 = normal). */
+  b: number
 }
 
 export const KINDS: { id: PlacedKind; label: string; hint: string }[] = [
@@ -40,9 +42,12 @@ const STEM_CODES: Stem[] = ['vocals', 'instruments', 'drums', 'bass']
 const KIND_CODES: PlacedKind[] = ['dot', 'soft', 'ghost', 'streak', 'blob']
 const r4 = (v: number) => Math.round(v * 10000) / 10000
 
-/** As text: compact arrays, [kind, stem, x, y, w, h, r, lv]. */
+/** As text: compact arrays, [kind, stem, x, y, w, h, r, lv, blend] (blend left off when normal). */
 export function encodePlaced(marks: Placed[]): string {
-  return JSON.stringify(marks.map((m) => [KIND_CODES.indexOf(m.k), STEM_CODES.indexOf(m.s), r4(m.x), r4(m.y), r4(m.w), r4(m.h), Math.round(m.r * 10) / 10, r4(m.lv)]))
+  return JSON.stringify(marks.map((m) => {
+    const a = [KIND_CODES.indexOf(m.k), STEM_CODES.indexOf(m.s), r4(m.x), r4(m.y), r4(m.w), r4(m.h), Math.round(m.r * 10) / 10, r4(m.lv)]
+    return m.b ? [...a, m.b] : a
+  }))
 }
 
 let lastText = ''
@@ -57,8 +62,9 @@ export function decodePlaced(text: unknown): Placed[] {
     if (Array.isArray(raw)) {
       out = raw
         .filter((a) => Array.isArray(a) && a.length >= 8 && a.every((v: unknown) => typeof v === 'number' && Number.isFinite(v)))
-        .map(([k, s, x, y, w, h, r, lv]) => ({
+        .map(([k, s, x, y, w, h, r, lv, b = 0]) => ({
           k: KIND_CODES[k] ?? 'dot', s: STEM_CODES[s] ?? 'vocals', x, y, w: Math.max(0.001, w), h: Math.max(0.001, h), r, lv: Math.min(1, Math.max(0, lv)),
+          b: Math.max(0, Math.round(b)),
         }))
     }
   } catch {}

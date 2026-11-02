@@ -11,6 +11,7 @@ import type { GooLayer } from '../engine/gooLayer'
 import type { FieldFx } from '../engine/fieldFx'
 import type { StretchFx } from '../engine/stretchFx'
 import type { StencilFx } from '../engine/stencilFx'
+import type { BlendFx } from '../engine/blendFx'
 import type { Placement, Viewport } from '../layout/types'
 import type { ShapedGlyph, ShapedText } from '../text/shaping'
 
@@ -42,6 +43,8 @@ export interface Layers {
   field: FieldFx
   /** Show the frame through the typed text: set `enabled`, write the letters into `stencil.glyphs`. */
   stencil: StencilFx
+  /** Marks with their own blend mode: add them each frame (`blend.add(mode, bar, blob)`); drawn over the frame. */
+  blend: BlendFx
 }
 
 export interface FrameContext {

@@ -689,10 +689,10 @@ const LOOK: Record<Placed['k'], 'ghost' | 'base' | 'event'> = { dot: 'event', so
  * Marks placed by hand (Manual), live with the music: each pulls its weight from its part's loudness
  * (`react`), pops on its part's hits (`pop`) and breathes with it (`breathe`), painted as Dots paints a
  * dot of that kind and weight in that place. Dots and ghosts go in with the picture's marks (so they haze
- * with it), streaks behind, blobs in front.
+ * with it), streaks behind, blobs in front; one with its own blend mode goes over the frame in that mode.
  */
 function drawPlaced(
-  placed: Placed[], pic: Picture, p: Record<string, any>, H: number, audio: FrameContext['audio'], hits: Record<Stem, number>,
+  placed: Placed[], pic: Picture, p: Record<string, any>, H: number, audio: FrameContext['audio'], hits: Record<Stem, number>, blend: FrameContext['layers']['blend'],
   out: { marks: BarSpec[]; stems: number[]; weights: number[]; sections: number[]; back: BlobSpec[]; front: BlobSpec[] },
 ) {
   for (const m of placed) {
@@ -703,31 +703,40 @@ function drawPlaced(
     const x = m.x * H, y = m.y * H
     const rot = (-m.r * Math.PI) / 180
     if (m.k === 'streak') {
-      out.back.push({
+      const streak: BlobSpec = {
         // (A streak's soft edge spreads past its size: drawn a little smaller, it fills its box.)
         x, y, rx: (m.w * H * grow) * 0.36, ry: m.h * H * 0.36, rotation: rot, softness: 1, form: 1,
         color: pic.streakColour?.(m.s) ?? lin(RAMPS[STEM_HUE[m.s]][1]), alpha: clamp01(p.streak ?? 0.85) * (0.5 + 0.5 * lv),
-      })
+      }
+      if (m.b) blend.add(m.b, undefined, streak)
+      else out.back.push(streak)
       continue
     }
     if (m.k === 'blob') {
-      out.front.push({
+      const blob: BlobSpec = {
         x, y, rx: (m.w * H * grow) / 2, ry: (m.h * H * grow) / 2, rotation: rot,
         softness: p.softness ?? 0.7, wobble: p.wobble ?? 0.15, seed: mod(m.x * 7.31 + m.y * 3.17, 1),
         form: BLOB_FORMS[p.form as keyof typeof BLOB_FORMS] ?? BLOB_FORMS.blob,
         color: lin(RAMPS[STEM_HUE[m.s]][2]), color2: lin(RAMPS[STEM_HUE[m.s]][1]), gradient: BLOB_GRADIENTS.radial,
         alpha: clamp01(p.opacity ?? 0.88) * (0.45 + 0.55 * lv), grain: p.fieldGrain ?? 0,
-      })
+      }
+      if (m.b) blend.add(m.b, undefined, blob)
+      else out.front.push(blob)
       continue
     }
     const kind = LOOK[m.k]
     const [row, t, am, sm] = pic.paint?.(kind, lv, m.s, x, y) ?? [ROW_INK, kind === 'ghost' ? 0.22 : 0.3 + 0.6 * lv, 1, 1]
     const w = m.w * H * grow * sm, h = m.h * H * grow * sm
     const r = Math.min(w, h) / 2
-    out.marks.push({
+    const mark: BarSpec = {
       x, y, w, h, radius: r, rotation: rot, t0: t, t1: t, row, alpha: am * (m.k === 'ghost' ? clamp01(p.ghost ?? 0.7) : m.k === 'soft' ? lerp(0.6, 1, lv) : 1),
       feather: Math.max(0.5, (p.soft ?? 0.4) * r * 0.6), stem: ORDER.indexOf(m.s),
-    })
+    }
+    if (m.b) {
+      blend.add(m.b, mark)
+      continue
+    }
+    out.marks.push(mark)
     out.stems.push(ORDER.indexOf(m.s))
     out.weights.push(PLACED_WEIGHT(m.k, lv))
     out.sections.push(0)
@@ -847,7 +856,7 @@ function create(): SubInstance {
         const fall = Math.exp(-dt / 0.3)
         for (const stem of STEMS) hits[stem] = Math.max(hits[stem] * fall, audio.stems[stem]?.onset ? audio.stems[stem].onsetStrength : 0)
         for (const list of Object.values(placedOut)) list.length = 0
-        drawPlaced(placed, pic, p, H, audio, hits, placedOut)
+        drawPlaced(placed, pic, p, H, audio, hits, layers.blend, placedOut)
         for (const s of placedOut.back) back.push(s)
         for (const b of placedOut.front) front.push(b)
         const n = hazeOf.marks.length

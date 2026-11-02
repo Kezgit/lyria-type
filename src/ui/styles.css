@@ -773,3 +773,28 @@ html, body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inte
 .compose-bin.over .lid { transform: rotate(18deg) translateY(-1.5px); }
 .compose-bin.gulp { animation: bin-gulp 0.3s var(--ease); }
 @keyframes bin-gulp { 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
+
+/* Compose's right-click menu: blend modes (as Figma lists them) and arranging. */
+.compose-menu {
+  position: fixed; z-index: 120; min-width: 196px; padding: 6px; border-radius: 12px;
+  background: #1e1f22; border: 1px solid rgb(255 255 255 / 0.08); box-shadow: 0 12px 40px rgb(0 0 0 / 0.45);
+  display: flex; flex-direction: column; font: 12.5px/1 -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  max-height: calc(100vh - 16px); overflow-y: auto;
+}
+.compose-menu[hidden] { display: none; }
+.compose-menu header { padding: 6px 10px 8px; color: #8e9198; font-size: 11px; }
+.compose-menu hr { width: calc(100% - 12px); margin: 5px 6px; border: 0; border-top: 1px solid rgb(255 255 255 / 0.08); }
+.compose-menu button {
+  display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 6px; padding: 7px 10px 7px 6px; border: 0; border-radius: 6px;
+  background: none; color: #e8eaed; font: inherit; text-align: left; cursor: pointer;
+}
+.compose-menu button i { font-style: normal; font-size: 11px; text-align: center; }
+.compose-menu button kbd { font: inherit; font-size: 11px; color: #8e9198; }
+.compose-menu button:hover { background: #2f6fe4; color: #fff; }
+.compose-menu button:hover kbd { color: rgb(255 255 255 / 0.75); }
+.compose-menu button.on { background: #2f6fe4; color: #fff; }
+.compose-menu:hover button.on:not(:hover) { background: rgb(47 111 228 / 0.35); }
+.compose-blend select {
+  grid-column: 2 / 4; width: 100%; padding: 5px 8px; border: 0; border-radius: 6px; background: var(--panel-input); color: var(--panel-fg);
+  font: inherit; font-size: 11px;
+}
