@@ -256,7 +256,7 @@ export function buildPanel(root: HTMLElement, audio: AudioEngine, engine: Engine
   function applyBuiltIn(def: ModeDefinition, preset: ModePreset) {
     const values = state.modeParams[def.id]
     // Marks placed by hand (Manual) and masks are the work itself, not a look: a preset keeps them.
-    const kept = Object.fromEntries(['manual_marks', 'masks'].filter((k) => values[k] && !(k in preset.params)).map((k) => [k, values[k]]))
+    const kept = Object.fromEntries(['manual_marks', 'masks', 'maskTimeline'].filter((k) => values[k] && !(k in preset.params)).map((k) => [k, values[k]]))
     Object.assign(values, defaults(def.params), preset.params, kept)
     if (preset.background || preset.ink) {
       state.background = preset.background ?? state.background

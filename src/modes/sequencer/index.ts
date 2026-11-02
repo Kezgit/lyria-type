@@ -49,6 +49,8 @@ const params: ParamSchema = {
   scrollSpeed: { type: 'number', value: 60, min: 0, max: 800, step: 1, label: 'scroll speed' },
   // Invisible shapes pushing the marks aside (masks.ts; edited in the Masks card).
   masks: { type: 'text', value: '', label: 'masks' },
+  // The masks' timeline: its length and whether it plays.
+  maskTimeline: { type: 'text', value: '', label: 'mask timeline' },
 }
 for (const sub of SUBS) {
   for (const [k, def] of Object.entries(sub.params)) params[key(sub, k)] = { ...def, label: def.label ?? k }
@@ -172,7 +174,7 @@ function create(): ModeInstance {
       if (dir === 'still' || !p.scrollSpeed) {
         scrolled = 0
         frame.layers.stretch.scroll.value.set(0, 0)
-        applyMasks(frame, p.masks)
+        applyMasks(frame, p.masks, p.maskTimeline)
         return
       }
       const span = dir === 'left' || dir === 'right' ? W : H
@@ -185,7 +187,7 @@ function create(): ModeInstance {
       for (const layer of [l.front, l.back]) scrollBlobs(layer, dx, dy, W, H)
       l.stretch.scroll.value.set(dx, dy)
       // The masks stay where they're put while the picture scrolls under them.
-      applyMasks(frame, p.masks)
+      applyMasks(frame, p.masks, p.maskTimeline)
     },
   }
 }

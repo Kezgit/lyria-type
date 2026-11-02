@@ -1,7 +1,8 @@
 import { Pane } from 'tweakpane'
 import { state } from '../app/state'
 import type { Engine } from '../engine/engine'
-import { SHAPES, decodeMasks, encodeMasks, liveMask, newMask, type Mask, type MaskShape } from '../modes/sequencer/masks'
+import { ANIMATED, SHAPES, decodeMasks, encodeMasks, liveMask, maskAt, newMask, setAt, timeline, type Animated, type Mask, type MaskShape } from '../modes/sequencer/masks'
+import { buildMaskTimeline } from './maskTimeline'
 
 // The Masks card: invisible shapes that push the Sequencer's marks aside
 // (modes/sequencer/masks.ts), in any of its styles. "Mask layers" lists them
@@ -11,7 +12,11 @@ import { SHAPES, decodeMasks, encodeMasks, liveMask, newMask, type Mask, type Ma
 // round it), to drag about; the picked one gets a box to scale and stretch by
 // its handles (shift keeps the shape, alt from the centre) and turn from just
 // outside a corner (shift: 15° steps). Clicks anywhere else go through to the
-// stage as usual. ⌘Z / ⇧⌘Z undo and redo mask changes while the card is open.
+// stage as usual (Outlines: off hides the dashed shapes, leaving the picked
+// one's box). ⌘Z / ⇧⌘Z undo and redo mask changes while the card is open.
+// Timeline opens the masks' keyframe timeline (ui/maskTimeline.ts): once a
+// mask has keys, every change to its place, size, turn, push or rings is
+// made at the playhead, as a key there.
 
 const KEY = 'masks'
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -39,7 +44,7 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
     const text = (values()[KEY] as string) ?? ''
     if (text === written) return false
     written = text
-    list = decodeMasks(text).map((m) => ({ ...m }))
+    list = decodeMasks(text).map((m) => structuredClone(m))
     if (!list.some((m) => m.id === picked)) picked = list[0]?.id ?? ''
     return true
   }
@@ -64,13 +69,24 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
     const text = from.pop()
     if (text === undefined) return
     to.push(encodeMasks(list))
-    list = decodeMasks(text).map((m) => ({ ...m }))
+    list = decodeMasks(text).map((m) => structuredClone(m))
     if (!list.some((m) => m.id === picked)) picked = list[0]?.id ?? ''
     write()
     renderList()
     renderSettings()
   }
   const current = () => list.find((m) => m.id === picked)
+  /** A mask as it is at the playhead. */
+  const now = (m: Mask) => maskAt(m, timeline.t)
+  /** Change a mask: animated values at the playhead (a key, once it has keys), the rest on the mask. */
+  const change = (m: Mask, values: Partial<Mask>) => {
+    const keyed: Partial<Record<Animated, number>> = {}
+    for (const [k, v] of Object.entries(values)) {
+      if ((ANIMATED as readonly string[]).includes(k)) keyed[k as Animated] = v as number
+      else (m as any)[k] = v
+    }
+    setAt(m, timeline.t, keyed)
+  }
 
   // --- The card ---------------------------------------------------------------------------------
   const away = document.createElement('p')
@@ -86,6 +102,33 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
   const head = document.createElement('div')
   head.className = 'masks-head'
   head.innerHTML = '<h5>Mask layers</h5>'
+  // Outlines on the stage, and the timeline.
+  const OUTLINES_KEY = 'lyria-type:mask-outlines'
+  let showOutlines = true
+  try {
+    showOutlines = localStorage.getItem(OUTLINES_KEY) !== 'off'
+  } catch {}
+  const headButtons = document.createElement('span')
+  headButtons.className = 'masks-head-buttons'
+  const outlinesBtn = document.createElement('button')
+  outlinesBtn.title = 'Show or hide the masks’ outlines on the stage'
+  const showOutlinesBtn = () => {
+    outlinesBtn.textContent = showOutlines ? 'Outlines: on' : 'Outlines: off'
+    outlinesBtn.classList.toggle('on', showOutlines)
+  }
+  outlinesBtn.addEventListener('click', () => {
+    showOutlines = !showOutlines
+    showOutlinesBtn()
+    try {
+      localStorage.setItem(OUTLINES_KEY, showOutlines ? 'on' : 'off')
+    } catch {}
+  })
+  showOutlinesBtn()
+  const timelineBtn = document.createElement('button')
+  timelineBtn.textContent = '◆ Timeline'
+  timelineBtn.title = 'Keyframe the masks over time'
+  headButtons.append(outlinesBtn, timelineBtn)
+  head.appendChild(headButtons)
   const adds = document.createElement('div')
   adds.className = 'masks-add'
   for (const s of SHAPES) {
@@ -123,7 +166,8 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
     const m = current()
     if (!m) return
     begin()
-    const copy = { ...m, id: Math.random().toString(36).slice(2, 9), name: `${m.name} copy`, x: m.x + 0.05, y: m.y - 0.05 }
+    const copy = { ...structuredClone(m), id: Math.random().toString(36).slice(2, 9), name: `${m.name} copy` }
+    change(copy, { x: now(m).x + 0.05, y: now(m).y - 0.05 })
     list.push(copy)
     picked = copy.id
     commit()
@@ -198,53 +242,67 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
     dupBtn.disabled = !current()
   }
 
-  // The picked mask's settings: a Tweakpane on a copy, written back as it changes.
+  // The picked mask's settings: a Tweakpane on a copy (as it is at the playhead), written back as it changes.
   let pane: Pane | null = null
   let editing: Mask | null = null
   function renderSettings() {
     pane?.dispose()
     pane = null
     const m = current()
-    editing = m ? { ...m } : null
+    editing = m ? { ...now(m) } : null
     if (!m || !editing) return
     pane = new Pane({ container: settingsHost })
     const e = editing
-    const apply = (last: boolean) => {
+    const apply = (key: keyof Mask, last: boolean) => {
       const target = current()
       if (!target) return
       begin()
-      Object.assign(target, e)
+      const was = now(target)
+      // Locked: width and height scale together.
+      if (e.lock && (key === 'w' || key === 'h')) {
+        const k = key === 'w' ? e.w / Math.max(1e-6, was.w) : e.h / Math.max(1e-6, was.h)
+        if (key === 'w') e.h = was.h * k
+        else e.w = was.w * k
+        pane?.refresh()
+      }
+      change(target, { [key]: e[key], ...(key === 'w' || key === 'h' ? { w: e.w, h: e.h } : {}) })
       if (last) commit()
       else write()
       renderList()
     }
     const add = (folder: any, key: keyof Mask, opts: Record<string, unknown>) =>
       folder.addBinding(e, key, opts).on('change', (ev: { last: boolean }) => {
-        apply(ev.last)
-        if (key === 'shape') renderSettings()
+        apply(key, ev.last)
+        if (key === 'shape' || key === 'stroke' || key === 'repeat') renderSettings()
       })
     const shape = pane.addFolder({ title: m.name })
     add(shape, 'shape', { label: 'shape', options: Object.fromEntries(SHAPES.map((s) => [s.label, s.id])) })
     if (e.shape === 'rounded') add(shape, 'round', { label: 'roundness', min: 0, max: 1, step: 0.01 })
+    add(shape, 'lock', { label: 'keep proportions' })
     add(shape, 'w', { label: 'width', min: 0.01, max: 3, step: 0.001 })
     add(shape, 'h', { label: 'height', min: 0.01, max: 3, step: 0.001 })
     add(shape, 'r', { label: 'rotation (°)', min: -180, max: 180, step: 0.5 })
+    add(shape, 'invert', { label: 'invert (show inside)' })
     const push = pane.addFolder({ title: 'Push' })
     add(push, 'strength', { label: 'strength', min: 0, max: 1, step: 0.01 })
     add(push, 'margin', { label: 'margin', min: 0, max: 0.5, step: 0.001 })
     add(push, 'soft', { label: 'soft edge (blur)', min: 0, max: 0.6, step: 0.001 })
     add(push, 'squash', { label: 'squash', min: 0, max: 1, step: 0.01 })
+    const rings = pane.addFolder({ title: 'Rings', expanded: e.stroke > 0 || e.repeat > 1 })
+    add(rings, 'stroke', { label: 'stroke (0 = filled)', min: 0, max: 0.4, step: 0.001 })
+    add(rings, 'repeat', { label: 'repeater copies', min: 1, max: 12, step: 1 })
+    if (e.repeat > 1) add(rings, 'spacing', { label: 'spacing (− = inward)', min: -0.5, max: 0.5, step: 0.001 })
     const life = pane.addFolder({ title: 'Life' })
     add(life, 'follow', { label: 'jelly (follows loosely)', min: 0, max: 1, step: 0.01 })
     add(life, 'wobble', { label: 'edge wobble', min: 0, max: 1, step: 0.01 })
     add(life, 'pulse', { label: 'swells with music', min: 0, max: 1, step: 0.01 })
     add(life, 'stem', { label: 'with', options: { 'all of it': 'all', vocals: 'vocals', instruments: 'instruments', drums: 'drums', bass: 'bass' } })
   }
-  // Moved on the stage: the settings show it.
+  // Moved on the stage, or the playhead moved: the settings show it.
   const refreshSettings = () => {
     const m = current()
     if (!m || !editing || !pane) return
-    Object.assign(editing, m)
+    Object.assign(editing, now(m))
     pane.refresh()
   }
 
@@ -282,13 +340,13 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
   /** A mask's outline (grown by `grow` px) as an SVG shape. */
   const outline = (m: Mask, b: { cx: number; cy: number; hw: number; hh: number; a: number }, grow: number, attrs: Record<string, string | number>) => {
     const t = `rotate(${b.a} ${b.cx} ${b.cy})`
-    const hw = b.hw + grow, hh = b.hh + grow
+    const hw = Math.max(1, b.hw + grow), hh = Math.max(1, b.hh + grow)
     if (m.shape === 'circle') return el('ellipse', { cx: b.cx, cy: b.cy, rx: Math.max(1, hw), ry: Math.max(1, hh), transform: t, ...attrs })
     const rr = m.shape === 'rounded' ? Math.min(b.hw, b.hh) * m.round + grow : grow
     return el('rect', { x: b.cx - hw, y: b.cy - hh, width: Math.max(1, 2 * hw), height: Math.max(1, 2 * hh), rx: Math.max(0, rr), transform: t, ...attrs })
   }
   const boxOf = (m: Mask, G = geom(), sprung = false) => {
-    const v = sprung ? liveMask(m) : m
+    const v = sprung ? liveMask(m) : now(m)
     const c = G.toStage(v.x, v.y)
     return { cx: c.x, cy: c.y, hw: (v.w / 2) * G.s, hh: (v.h / 2) * G.s, a: v.r }
   }
@@ -300,17 +358,27 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
   function draw() {
     g.replaceChildren()
     const G = geom()
-    for (const m of list) {
-      if (!m.on) continue
-      const b = boxOf(m, G)
-      const live = boxOf(m, G, true)
+    for (const base of list) {
+      if (!base.on) continue
+      const m = now(base)
+      const b = boxOf(base, G)
+      const live = boxOf(base, G, true)
       const pickedOne = m.id === picked
-      // Its reach and margin, faint; the shape (as it's moving now) dashed; a fill to grab it by.
-      outline(m, live, (m.margin + m.soft) * G.s, { class: 'masks-reach' })
-      if (m.margin > 0) outline(m, live, m.margin * G.s, { class: 'masks-margin' })
-      outline(m, live, 0, { class: pickedOne ? 'masks-shape picked' : 'masks-shape' })
+      // Its outline (each ring: both edges of the stroke, every repeat), dashed, as it's moving now; its
+      // margin and reach fainter. Hidden with Outlines off, leaving the picked one's box.
+      if (showOutlines) {
+        const copies = Math.max(1, Math.round(m.repeat))
+        for (let i = 0; i < copies; i++) {
+          const at = i * m.spacing * G.s
+          const edges = m.stroke > 0 ? [at - (m.stroke / 2) * G.s, at + (m.stroke / 2) * G.s] : [at]
+          const outer = Math.max(...edges)
+          if (i === 0 || i === copies - 1) outline(m, live, outer + (m.margin + m.soft) * G.s, { class: 'masks-reach' })
+          for (const e of edges) outline(m, live, e, { class: pickedOne ? 'masks-shape picked' : 'masks-shape' })
+        }
+        if (m.margin > 0) outline(m, live, m.margin * G.s, { class: 'masks-margin' })
+      }
       const grab = outline(m, b, 0, { class: 'masks-grab' })
-      grab.addEventListener('pointerdown', (e) => start(e as PointerEvent, m, 'move'))
+      grab.addEventListener('pointerdown', (e) => start(e as PointerEvent, base, 'move'))
       if (!pickedOne) continue
       el('rect', { x: b.cx - b.hw, y: b.cy - b.hh, width: 2 * b.hw, height: 2 * b.hh, transform: `rotate(${b.a} ${b.cx} ${b.cy})`, class: 'masks-box' })
       // Rotate zones just outside the corners, then the handles over them.
@@ -319,7 +387,7 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
         const off = rot(ux * 12, uy * 12, b.a)
         const zone = el('circle', { cx: p.x + off.x, cy: p.y + off.y, r: 12, class: 'masks-rotate' })
         ;(zone as SVGElement).style.cursor = ROTATE_CURSOR
-        zone.addEventListener('pointerdown', (e) => start(e as PointerEvent, m, 'rotate'))
+        zone.addEventListener('pointerdown', (e) => start(e as PointerEvent, base, 'rotate'))
       }
       for (const [ux, uy] of HANDLES) {
         if ((!ux && b.hw < 20) || (!uy && b.hh < 20)) continue
@@ -327,7 +395,7 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
         const h = el('rect', { x: p.x - 4, y: p.y - 4, width: 8, height: 8, rx: 1.5, transform: `rotate(${b.a} ${p.x} ${p.y})`, class: 'masks-handle' })
         const dir = Math.round(((Math.atan2(uy, ux) * 180) / Math.PI + b.a + 360) / 45) % 4
         ;(h as SVGElement).style.cursor = ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][dir]
-        h.addEventListener('pointerdown', (e) => start(e as PointerEvent, m, [ux, uy]))
+        h.addEventListener('pointerdown', (e) => start(e as PointerEvent, base, [ux, uy]))
       }
     }
   }
@@ -349,7 +417,7 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
       renderSettings()
     }
     begin()
-    drag = { m, what, x0: x, y0: y, m0: { ...m }, b0: boxOf(m) }
+    drag = { m, what, x0: x, y0: y, m0: { ...now(m) }, b0: boxOf(m) }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', end, { once: true })
   }
@@ -359,12 +427,11 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
     const G = geom()
     const { m, m0, b0 } = drag
     if (drag.what === 'move') {
-      m.x = m0.x + (x - drag.x0) / G.s
-      m.y = m0.y - (y - drag.y0) / G.s
+      change(m, { x: m0.x + (x - drag.x0) / G.s, y: m0.y - (y - drag.y0) / G.s })
     } else if (drag.what === 'rotate') {
       let d = ((Math.atan2(y - b0.cy, x - b0.cx) - Math.atan2(drag.y0 - b0.cy, drag.x0 - b0.cx)) * 180) / Math.PI
       if (e.shiftKey) d = Math.round((m0.r + d) / 15) * 15 - m0.r
-      m.r = ((((m0.r + d) % 360) + 540) % 360) - 180
+      change(m, { r: ((((m0.r + d) % 360) + 540) % 360) - 180 })
     } else {
       const [ux, uy] = drag.what
       const p = rot(x - b0.cx, y - b0.cy, -b0.a)
@@ -372,7 +439,8 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
       const ax = fromCentre ? 0 : -ux * b0.hw, ay = fromCentre ? 0 : -uy * b0.hh
       let hw = ux ? Math.abs(p.x - ax) / (fromCentre ? 1 : 2) : b0.hw
       let hh = uy ? Math.abs(p.y - ay) / (fromCentre ? 1 : 2) : b0.hh
-      if (e.shiftKey) {
+      // Shift keeps the proportions; so do the corners of a mask set to keep them.
+      if (e.shiftKey || (m.lock && ux && uy)) {
         const k = Math.max(ux ? hw / b0.hw : 0, uy ? hh / b0.hh : 0)
         hw = b0.hw * k
         hh = b0.hh * k
@@ -382,10 +450,7 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
       const lc = { x: fromCentre || !ux ? 0 : ax + Math.sign(p.x - ax || ux) * hw, y: fromCentre || !uy ? 0 : ay + Math.sign(p.y - ay || uy) * hh }
       const c = rot(lc.x, lc.y, b0.a)
       const u = G.toUnits(b0.cx + c.x, b0.cy + c.y)
-      m.x = u.X
-      m.y = u.Y
-      m.w = (2 * hw) / G.s
-      m.h = (2 * hh) / G.s
+      change(m, { x: u.X, y: u.Y, w: (2 * hw) / G.s, h: (2 * hh) / G.s })
     }
     write()
     refreshSettings()
@@ -411,6 +476,25 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
     e.preventDefault()
   })
 
+  // --- The timeline ----------------------------------------------------------------------------------------
+  const tl = buildMaskTimeline(stage, {
+    list: () => list,
+    picked: () => picked,
+    pick: (id) => {
+      picked = id
+      renderList()
+      renderSettings()
+    },
+    begin,
+    commit,
+    save: (text) => (values().maskTimeline = text),
+    changed: () => refreshSettings(),
+  })
+  timelineBtn.addEventListener('click', () => {
+    tl.toggle()
+    timelineBtn.classList.toggle('on', tl.open)
+  })
+
   // --- Each frame -------------------------------------------------------------------------------------
   let shown = ''
   const frame = () => {
@@ -426,7 +510,11 @@ export function buildMasksCard(page: HTMLElement, engine: Engine, isOpen: () => 
       renderSettings()
     }
     svg.style.display = on ? 'block' : 'none'
+    tl.show(on)
     if (on) draw()
+    // Playing keys: the settings follow the picked mask (a few times a second).
+    if (on && timeline.playing && current()?.keys.length && ++ticks % 6 === 0) refreshSettings()
   }
+  let ticks = 0
   frame()
 }

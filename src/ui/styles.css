@@ -834,3 +834,58 @@ html, body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inte
 .masks-overlay .masks-box { fill: none; stroke: #8fb4ff; stroke-width: 1; }
 .masks-overlay .masks-handle { fill: #fff; stroke: #8fb4ff; stroke-width: 1.25; pointer-events: all; }
 .masks-overlay .masks-rotate { fill: transparent; pointer-events: all; }
+
+/* Masks card header buttons (outlines, timeline). */
+.masks-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.masks-head-buttons { display: flex; gap: 4px; }
+.masks-head-buttons button {
+  padding: 5px 8px; border: 0; border-radius: 7px; background: var(--panel-input); color: #b9bcc3;
+  font: 600 10px/1 inherit; font-family: inherit; cursor: pointer;
+}
+.masks-head-buttons button:hover { color: var(--panel-fg); }
+.masks-head-buttons button.on { background: #2a2d33; color: var(--panel-fg); }
+
+/* The masks' timeline, above the bottom bar (ui/maskTimeline.ts). */
+.mask-timeline {
+  position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); z-index: 18;
+  width: min(760px, max(460px, calc(100vw - 720px))); padding: 8px 10px 10px; border-radius: 14px;
+  background: rgb(15 16 19 / 0.92); border: 1px solid rgb(255 255 255 / 0.09);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 10px 34px rgb(0 0 0 / 0.4);
+  color: var(--panel-fg); font: 11px/1.2 -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+}
+.mask-timeline[hidden] { display: none; }
+.mtl-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.mtl-bar button, .mtl-bar select, .mtl-length input {
+  height: 26px; padding: 0 9px; border: 0; border-radius: 7px; background: #23252a; color: var(--panel-fg); font: inherit; cursor: pointer;
+}
+.mtl-bar button:hover:not(:disabled) { background: #2e3137; }
+.mtl-bar button:disabled, .mtl-bar select:disabled { opacity: 0.35; cursor: default; }
+.mtl-play { width: 30px; padding: 0 !important; font-size: 10px !important; letter-spacing: -1px; }
+.mtl-clock { min-width: 52px; font-variant-numeric: tabular-nums; color: #b9bcc3; }
+.mtl-length { display: flex; align-items: center; gap: 4px; color: var(--panel-dim); }
+.mtl-length input { width: 52px; cursor: text; }
+.mtl-key { color: #fec700 !important; }
+.mtl-close { margin-left: auto; width: 26px; padding: 0 !important; font-size: 15px !important; }
+.mtl-body { position: relative; }
+.mtl-ruler { position: relative; height: 18px; border-bottom: 1px solid rgb(255 255 255 / 0.08); cursor: ew-resize; }
+.mtl-ruler i { position: absolute; bottom: 0; width: 1px; height: 4px; background: rgb(255 255 255 / 0.2); }
+.mtl-ruler i.major { height: 7px; background: rgb(255 255 255 / 0.35); }
+.mtl-ruler span { position: absolute; top: 0; transform: translateX(-50%); font-size: 9.5px; color: var(--panel-dim); font-variant-numeric: tabular-nums; }
+.mtl-rows { display: flex; flex-direction: column; max-height: 132px; overflow-y: auto; padding-top: 2px; }
+.mtl-rows .hint { padding: 8px 4px; }
+.mtl-row { display: grid; grid-template-columns: 120px 1fr; align-items: center; height: 26px; border-radius: 6px; }
+.mtl-row.on { background: rgb(143 180 255 / 0.1); }
+.mtl-name { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #b9bcc3; cursor: pointer; }
+.mtl-row.on .mtl-name { color: var(--panel-fg); }
+.mtl-track { position: relative; height: 100%; margin-right: 10px; }
+.mtl-track b { position: absolute; top: 50%; height: 2px; margin-top: -1px; background: rgb(254 199 0 / 0.25); }
+.mtl-diamond {
+  position: absolute; top: 50%; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; padding: 0; border: 1.5px solid #0f1013;
+  background: #fec700; transform: rotate(45deg); border-radius: 2px; cursor: ew-resize;
+}
+/* As After Effects draws them: ease = rounded, linear = diamond, hold = square. */
+.mtl-diamond.ease { border-radius: 50% 2px 50% 2px; }
+.mtl-diamond.hold { transform: none; border-radius: 1px; }
+.mtl-diamond.on { background: #fff; box-shadow: 0 0 0 2px #2f6fe4; }
+.mtl-playhead { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: -0.5px; background: #ff5a59; pointer-events: none; }
+.mtl-playhead::before { content: ''; position: absolute; top: 0; left: -4px; width: 9px; height: 9px; border-radius: 0 0 4px 4px; background: #ff5a59; }
