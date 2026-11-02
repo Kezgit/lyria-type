@@ -798,3 +798,39 @@ html, body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inte
   grid-column: 2 / 4; width: 100%; padding: 5px 8px; border: 0; border-radius: 6px; background: var(--panel-input); color: var(--panel-fg);
   font: inherit; font-size: 11px;
 }
+
+/* Masks: the card's layer list, and the outlines on the stage (ui/masksCard.ts). */
+.masks-body { display: flex; flex-direction: column; gap: 8px; }
+.masks-body[hidden] { display: none; }
+.masks-head h5 { margin: 4px 2px 0; font-size: 10px; font-weight: 650; letter-spacing: 0.1em; text-transform: uppercase; color: var(--panel-dim); }
+.masks-add { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.masks-add button {
+  display: flex; align-items: center; justify-content: center; gap: 5px; padding: 7px 4px; border: 0; border-radius: 8px;
+  background: var(--panel-input); color: #b9bcc3; font: 600 10.5px/1 inherit; font-family: inherit; cursor: pointer;
+}
+.masks-add button:hover { background: #24262b; color: var(--panel-fg); }
+.masks-layers { display: flex; flex-direction: column; gap: 2px; padding: 4px; border-radius: 10px; background: var(--panel-input); }
+.masks-layers .hint { padding: 6px; }
+.masks-row {
+  display: grid; grid-template-columns: 24px 1fr 22px; align-items: center; gap: 4px; padding: 4px 6px 4px 2px; border-radius: 7px;
+  color: #b9bcc3; font-size: 11.5px; cursor: pointer;
+}
+.masks-row:hover { background: rgb(255 255 255 / 0.04); }
+.masks-row.on { background: rgb(143 180 255 / 0.16); color: var(--panel-fg); }
+.masks-row.hidden .masks-name { opacity: 0.4; }
+.masks-name { display: flex; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.masks-eye, .masks-del { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: none; color: inherit; cursor: pointer; }
+.masks-eye:hover, .masks-del:hover { background: rgb(255 255 255 / 0.08); }
+.masks-del { opacity: 0; font-size: 15px; }
+.masks-row:hover .masks-del { opacity: 0.8; }
+.masks-settings:empty { display: none; }
+
+.masks-overlay { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 11; display: none; overflow: visible; pointer-events: none; }
+.masks-overlay .masks-reach { fill: none; stroke: #8fb4ff; stroke-opacity: 0.18; stroke-width: 1; stroke-dasharray: 2 5; }
+.masks-overlay .masks-margin { fill: none; stroke: #8fb4ff; stroke-opacity: 0.35; stroke-width: 1; stroke-dasharray: 3 4; }
+.masks-overlay .masks-shape { fill: none; stroke: #8fb4ff; stroke-opacity: 0.7; stroke-width: 1.4; stroke-dasharray: 6 4; }
+.masks-overlay .masks-shape.picked { stroke-opacity: 1; stroke-width: 1.6; }
+.masks-overlay .masks-grab { fill: transparent; stroke: none; pointer-events: all; cursor: move; }
+.masks-overlay .masks-box { fill: none; stroke: #8fb4ff; stroke-width: 1; }
+.masks-overlay .masks-handle { fill: #fff; stroke: #8fb4ff; stroke-width: 1.25; pointer-events: all; }
+.masks-overlay .masks-rotate { fill: transparent; pointer-events: all; }

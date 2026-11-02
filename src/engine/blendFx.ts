@@ -110,6 +110,14 @@ export class BlendFx {
     if (blob) g.blobs.push(blob)
   }
 
+  /** Every mark added this frame (to move them, as the Sequencer's masks do). */
+  eachSpec(fn: (spec: BarSpec | BlobSpec) => void) {
+    for (const g of this.groups.values()) {
+      g.bars.forEach(fn)
+      g.blobs.forEach(fn)
+    }
+  }
+
   /** Forget this frame's marks (the engine calls it before each frame). */
   clear() {
     for (const g of this.groups.values()) {

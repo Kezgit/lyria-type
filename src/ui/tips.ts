@@ -12,7 +12,10 @@ const TIPS: Record<string, string> = {
   Audio: 'The music driving the picture: the demo, your own song, stems or the microphone.',
   Instruments: 'Each instrument the music is heard as: mute it, set how it’s heard, add notes, colour its letters.',
   Compose: 'Place dots, streaks and blobs by hand and arrange them on the stage. They still play with the music.',
-  Canvas: 'Compose on a blank page or over the song’s Dots picture, and how the placed marks move with the music.',
+  Masks: 'Invisible shapes the Sequencer’s marks flow around. Move, stretch and scale them; the marks make way.',
+  Push: 'How hard the mask pushes, how much room it keeps, how soft its edge is, and how much marks squash against it.',
+  Life: 'How it moves: springing loosely after you, breathing at the edge, swelling with the music.',
+    Canvas: 'Compose on a blank page or over the song’s Dots picture, and how the placed marks move with the music.',
 
   // Text card
   Type: 'Font, size, letter spacing and where lines wrap.',

@@ -4,6 +4,7 @@ import type { ParamSchema } from '../../app/params'
 import type { FrameContext, ModeDefinition, ModeInstance, ModePreset } from '../types'
 import { Composition } from './composition'
 import { manual } from './manual'
+import { applyMasks } from './masks'
 import { finish, finishGroups, finishParams, stretchByStem, typedChars } from './finish'
 import { barcode } from './barcode'
 import { dots } from './dots'
@@ -46,6 +47,8 @@ const params: ParamSchema = {
   hold: { type: 'number', value: 0.35, min: 0.02, max: 4, step: 0.01, label: 'notes fade after (s)' },
   scroll: { type: 'select', value: 'still', label: 'scroll', options: { Still: 'still', Left: 'left', Right: 'right', Up: 'up', Down: 'down' } },
   scrollSpeed: { type: 'number', value: 60, min: 0, max: 800, step: 1, label: 'scroll speed' },
+  // Invisible shapes pushing the marks aside (masks.ts; edited in the Masks card).
+  masks: { type: 'text', value: '', label: 'masks' },
 }
 for (const sub of SUBS) {
   for (const [k, def] of Object.entries(sub.params)) params[key(sub, k)] = { ...def, label: def.label ?? k }
@@ -139,7 +142,8 @@ function scrollBlobs(layer: BlobLayer, dx: number, dy: number, W: number, H: num
 function create(): ModeInstance {
   const comp = new Composition()
   const instances = new Map<string, SubInstance>()
-  const own: Record<string, any> = {}
+  // Each style's own settings, unprefixed (one object per style, so one's never carry into another's).
+  const owns = new Map<string, Record<string, any>>()
   // How far the picture has scrolled (px), wrapping round the frame.
   let scrolled = 0
 
@@ -151,6 +155,7 @@ function create(): ModeInstance {
       const sub = subOf(p)
       let inst = instances.get(sub.id)
       if (!inst) instances.set(sub.id, (inst = sub.create()))
+      const own = owns.get(sub.id) ?? owns.set(sub.id, {}).get(sub.id)!
       for (const k of Object.keys(sub.params)) own[k] = p[key(sub, k)]
       // Stretch colours its lanes by stem when the shared colour is on (one gradient per stem).
       if (sub.id === 'stretch' && stretchByStem(p)) own.colourBy = 'stems'
@@ -167,6 +172,7 @@ function create(): ModeInstance {
       if (dir === 'still' || !p.scrollSpeed) {
         scrolled = 0
         frame.layers.stretch.scroll.value.set(0, 0)
+        applyMasks(frame, p.masks)
         return
       }
       const span = dir === 'left' || dir === 'right' ? W : H
@@ -178,6 +184,8 @@ function create(): ModeInstance {
       for (const layer of [l.bars, l.barsMid.bars, l.barsFar.bars]) scrollBars(layer, dx, dy, W, H)
       for (const layer of [l.front, l.back]) scrollBlobs(layer, dx, dy, W, H)
       l.stretch.scroll.value.set(dx, dy)
+      // The masks stay where they're put while the picture scrolls under them.
+      applyMasks(frame, p.masks)
     },
   }
 }

@@ -20,16 +20,17 @@ import { attachTips } from './tips'
 import { buildStemMeters } from './stemColours'
 import { buildRack } from './rack'
 import { buildCompose } from './compose'
+import { buildMasksCard } from './masksCard'
 import type { ModeDefinition, ModePreset } from '../modes/types'
 
 // The panel: cards floating over the stage, each a pill that opens into its
-// own window. Text, Scene, Instruments and Compose on the left; Export, Mode, Presets
+// own window. Text, Scene, Instruments, Compose and Masks on the left; Export, Mode, Presets
 // and Audio stacked on the right, where an open card pushes the ones below it
 // down. Mode opens on load; Esc closes them all.
 // Each card holds Tweakpanes; mode and layout controls are generated from
 // their param schemas.
 
-const LEFT = ['Text', 'Scene', 'Instruments', 'Compose'] as const
+const LEFT = ['Text', 'Scene', 'Instruments', 'Compose', 'Masks'] as const
 const RIGHT = ['Export', 'Mode', 'Presets', 'Audio'] as const
 const TABS = [...LEFT, ...RIGHT]
 type Tab = (typeof TABS)[number]
@@ -254,10 +255,9 @@ export function buildPanel(root: HTMLElement, audio: AudioEngine, engine: Engine
   /** A built-in preset over the mode's defaults, with its page colours and type. */
   function applyBuiltIn(def: ModeDefinition, preset: ModePreset) {
     const values = state.modeParams[def.id]
-    // Marks placed by hand (Manual) are the work itself, not a look: a preset keeps them.
-    const placed = values.manual_marks
-    Object.assign(values, defaults(def.params), preset.params)
-    if (placed && !('manual_marks' in preset.params)) values.manual_marks = placed
+    // Marks placed by hand (Manual) and masks are the work itself, not a look: a preset keeps them.
+    const kept = Object.fromEntries(['manual_marks', 'masks'].filter((k) => values[k] && !(k in preset.params)).map((k) => [k, values[k]]))
+    Object.assign(values, defaults(def.params), preset.params, kept)
     if (preset.background || preset.ink) {
       state.background = preset.background ?? state.background
       state.ink = preset.ink ?? state.ink
@@ -431,6 +431,8 @@ export function buildPanel(root: HTMLElement, audio: AudioEngine, engine: Engine
     open: () => !pages.get('Compose')!.hidden,
     startManual: () => usePreset({ key: 'sequencer-manual-blank', mode: 'sequencer', sub: 'manual', name: 'Blank', saved: false, group: '' }),
   })
+  // Masks: invisible shapes pushing the Sequencer's marks aside (any style), edited on the stage while open.
+  buildMasksCard(pages.get('Masks')!, engine, () => !pages.get('Masks')!.hidden)
 
   // Images dropped on the stage (every mode): where their colours go and how they arrive (engine/dropFx.ts).
   const dropPane = paneIn('Scene')
