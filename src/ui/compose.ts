@@ -15,6 +15,9 @@ import { panning } from './view'
 //                  copies); the box's corner / edge handles scale (shift keeps
 //                  the shape, alt scales from the centre); just outside a
 //                  corner rotates (shift: 15° steps)
+//   the bin        while something is selected, a bin sits just above the
+//                  bottom bar: drag the selection onto it (it opens up and
+//                  turns red) to delete it, Instagram-story style; or click it
 //   keys           ⌫ delete · ⌘Z / ⇧⌘Z undo / redo · ⌘D duplicate · ⌘A all ·
 //                  arrows nudge (shift: more) · Esc deselects, then back to select
 // Marks live in the mode's `manual_marks` setting (modes/sequencer/placed.ts).
@@ -254,6 +257,19 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
   const g = document.createElementNS(SVG_NS, 'g')
   svg.appendChild(g)
 
+  // The bin: drag the selection onto it to delete it.
+  const bin = document.createElement('button')
+  bin.className = 'compose-bin'
+  bin.title = 'Drag here to delete (or click)'
+  bin.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path class="lid" d="M4 6.5h16M9.5 6.5V4.8c0-.7.5-1.3 1.2-1.3h2.6c.7 0 1.2.6 1.2 1.3v1.7"/><path d="M6 6.5l.9 12.2c.1 1 .9 1.8 1.9 1.8h6.4c1 0 1.8-.8 1.9-1.8L18 6.5M10 10.5v6M14 10.5v6"/></svg>'
+  bin.addEventListener('click', () => remove())
+  stage.appendChild(bin)
+  /** Whether the pointer is over the bin (with a little slack, as a drop target). */
+  const overBin = (e: PointerEvent) => {
+    const r = bin.getBoundingClientRect()
+    return bin.classList.contains('shown') && e.clientX > r.left - 14 && e.clientX < r.right + 14 && e.clientY > r.top - 14 && e.clientY < r.bottom + 14
+  }
+
   /** Frame geometry: mark units (frame heights, y up) <-> stage px. */
   const geom = () => {
     const { viewport } = engine.letters
@@ -477,6 +493,7 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
     }
     const G = geom()
     if (drag.kind === 'move') {
+      bin.classList.toggle('over', overBin(e))
       const d = drag
       const dX = (x - d.x0) / G.s, dY = -(y - d.y0) / G.s
       d.idx.forEach((i, k) => {
@@ -536,7 +553,17 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
     if (kind === 'marquee') renderCard()
     else commit()
   }
-  svg.addEventListener('pointerup', end)
+  svg.addEventListener('pointerup', (e) => {
+    // Dropped on the bin: the selection goes (undo brings it back where it was).
+    if (drag?.kind === 'move' && overBin(e)) {
+      list = list.filter((_, i) => !selected.has(i))
+      selected.clear()
+      bin.classList.add('gulp')
+      setTimeout(() => bin.classList.remove('gulp'), 300)
+    }
+    bin.classList.remove('over')
+    end()
+  })
   svg.addEventListener('pointercancel', end)
   svg.addEventListener('pointerleave', () => (hover = -1))
   // The trackpad still zooms and pans the view while editing.
@@ -645,6 +672,8 @@ export function buildCompose(page: HTMLElement, engine: Engine, api: ComposeApi)
       shownFor = key
       renderCard()
     }
+    bin.classList.toggle('shown', on && selected.size > 0)
+    bin.classList.toggle('dragging', drag?.kind === 'move')
     if (on) draw()
     else if (wasEditing) {
       selected.clear()
