@@ -85,7 +85,7 @@ export function mergeParams(target: Record<string, unknown>, incoming: unknown, 
     else if (def.type === 'boolean' && typeof v === 'boolean') target[key] = v
     else if (def.type === 'color' && isColor(v)) target[key] = v
     else if (def.type === 'select' && typeof v === 'string' && Object.values(def.options).includes(v)) target[key] = v
-    else if (def.type === 'text' && typeof v === 'string') target[key] = v.slice(0, 20000)
+    else if (def.type === 'text' && typeof v === 'string') target[key] = v.slice(0, 400000)
   }
 }
 

@@ -3,6 +3,7 @@ import type { BlobLayer } from '../../engine/blobLayer'
 import type { ParamSchema } from '../../app/params'
 import type { FrameContext, ModeDefinition, ModeInstance, ModePreset } from '../types'
 import { Composition } from './composition'
+import { manual } from './manual'
 import { finish, finishGroups, finishParams, stretchByStem, typedChars } from './finish'
 import { barcode } from './barcode'
 import { dots } from './dots'
@@ -36,7 +37,7 @@ export interface SubInstance {
   update(frame: FrameContext, comp: Composition, params: Record<string, any>): void
 }
 
-const SUBS: SubMode[] = [barcode, pulse, stretch, dots, ledger, sq]
+const SUBS: SubMode[] = [barcode, pulse, stretch, dots, ledger, sq, manual]
 
 const key = (sub: SubMode, k: string) => `${sub.id}_${k}`
 

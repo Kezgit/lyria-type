@@ -10,6 +10,9 @@ const TIPS: Record<string, string> = {
   Presets: 'Ready-made looks from every mode, plus the ones you save. Click one to use it.',
   Export: 'Save the frame as a picture, or a video with the music.',
   Audio: 'The music driving the picture: the demo, your own song, stems or the microphone.',
+  Instruments: 'Each instrument the music is heard as: mute it, set how it’s heard, add notes, colour its letters.',
+  Compose: 'Place dots, streaks and blobs by hand and arrange them on the stage. They still play with the music.',
+  Canvas: 'Compose on a blank page or over the song’s Dots picture, and how the placed marks move with the music.',
 
   // Text card
   Type: 'Font, size, letter spacing and where lines wrap.',

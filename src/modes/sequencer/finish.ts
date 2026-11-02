@@ -120,6 +120,9 @@ export const finishParams: ParamSchema = {
 }
 
 /** Panel groups: the buckets for every sub-mode; colour, shape and haze for all but Dots (it has its own). */
+/** Dots, and Manual (Dots placed by hand): they draw their own shape and haze. */
+const isDots = (sub: string) => sub === 'dots' || sub === 'manual'
+
 export function finishGroups(sub: string, own: Record<string, string[]> = {}): Record<string, string[]> {
   const buckets = {
     Stems: ['vocals', 'instruments', 'drums', 'bass'],
@@ -129,7 +132,7 @@ export function finishGroups(sub: string, own: Record<string, string[]> = {}): R
     Characters: ['chars', 'charText', 'marksAs', 'charOrder', 'charSize', 'charMin'],
   }
   // Dots has its own shape and haze.
-  if (sub === 'dots') return buckets
+  if (isDots(sub)) return buckets
   return {
     ...buckets,
     'Dot grid': ['dotGrid', 'gridAcross', 'gridSize', 'gridContrast', 'gridSolid', 'gridGhost', 'gridHaze'],
@@ -525,8 +528,8 @@ export function finish(frame: FrameContext, p: Record<string, any>, sub: string)
   const W = viewport.width, H = viewport.height
   const inkHex = `#${ca.setRGB(ink[0], ink[1], ink[2]).getHexString()}`
   // Dots has its own shape and haze: only its stems and the shared colour here.
-  const q = sub === 'dots' ? { ...p, dotSize: 1, dotLength: 1, dotRound: 1, dotAngle: 0, randSize: 0, randLength: 0, randAngle: 0 } : p
-  const grid = sub !== 'dots' && p.dotGrid
+  const q = isDots(sub) ? { ...p, dotSize: 1, dotLength: 1, dotRound: 1, dotAngle: 0, randSize: 0, randLength: 0, randAngle: 0 } : p
+  const grid = !isDots(sub) && p.dotGrid
   if (grid) {
     // Stems and colour first; the main haze (far layer) from the picture, the dots or both; the dots over the
     // picture, with the dot shape on them alone; the dots' own haze (near layer). `crisp` fades the picture's
@@ -557,13 +560,13 @@ export function finish(frame: FrameContext, p: Record<string, any>, sub: string)
   }
   gradientMap(layers.field.injectBars, p, W, H)
   // Dots draws its haze itself: the shared colour repaints it too, so the glow matches the dots.
-  if (sub === 'dots' && p.colour !== 'drawn') {
+  if (isDots(sub) && p.colour !== 'drawn') {
     const plain = { ...q, vocals: 1, instruments: 1, drums: 1, bass: 1 }
     finishBars(layers.barsFar.bars, plain, ink, W, H, time, false)
     finishBars(layers.barsMid.bars, plain, ink, W, H, time, false)
   }
   // Dots draws its haze itself: the gradient map repaints it too.
-  if (sub === 'dots') for (const l of [layers.barsFar.bars, layers.barsMid.bars]) gradientMap(l, p, W, H)
+  if (isDots(sub)) for (const l of [layers.barsFar.bars, layers.barsMid.bars]) gradientMap(l, p, W, H)
   finishBars(layers.field.injectBars, q, ink, W, H, time)
   finishGlyphs(layers.outlines, q, inkHex, W, H)
   if (sub === 'stretch') {
@@ -577,8 +580,8 @@ export function finish(frame: FrameContext, p: Record<string, any>, sub: string)
     }
   }
   if (!grid) {
-    if (sub !== 'dots' && p.hazeBlur > 0) haze(frame, p)
-    else if (sub !== 'dots' && p.crisp < 1) for (let i = 0; i < layers.bars.count; i++) layers.bars.grad[i * 4 + 2] *= clamp01(p.crisp)
+    if (!isDots(sub) && p.hazeBlur > 0) haze(frame, p)
+    else if (!isDots(sub) && p.crisp < 1) for (let i = 0; i < layers.bars.count; i++) layers.bars.grad[i * 4 + 2] *= clamp01(p.crisp)
   }
   // Ledger's character texture, removed.
   if (sub === 'ledger' && p.chars === 'none') layers.outlines.count = 0

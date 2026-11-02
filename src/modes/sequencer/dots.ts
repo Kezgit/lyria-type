@@ -9,6 +9,8 @@ import { applyMove, type DotMotionInstance, type MarkInfo, type MarkMove, type M
 import { PALETTES, paletteOf, paletteRow } from './palettes'
 import { LEDGER_PALETTES, LEDGER_TINT } from './ledger'
 import { dotShapeKeys, dotShapeParams, shapeDot, shapesDots } from '../shared/dotShape'
+import { decodePlaced, type Placed } from './placed'
+import type { FrameContext } from '../types'
 import {
   HAIR, HEAVY, MEDIUM, ORDER, ROW_INK, ROW_MULTI, SECTION_HUES, SOLID, barcodeGradients, drawHaze, hazeKeys, hazeParams,
   rowOf, sectionAt, type Hue,
@@ -291,6 +293,10 @@ interface Picture {
   info: MarkInfo[]
   /** The grid, for motions. */
   grid: Omit<MotionFrame, 'time' | 'dt' | 'audio' | 'position' | 'amount' | 'speed' | 'params'> | null
+  /** For marks placed by hand (Manual): how the palette paints a dot of this kind and weight here; its gradient row, position, alpha and size factors. */
+  paint?: (kind: 'ghost' | 'base' | 'event', lv: number, stem: Stem, x: number, y: number) => [number, number, number, number]
+  /** And a streak's colour in a part (linear rgb). */
+  streakColour?: (stem: Stem) => RGB
 }
 const empty = (): Picture => ({ dots: [], marks: [], stems: [], weights: [], sections: [], streaks: [], ruling: null, info: [], grid: null })
 
@@ -553,6 +559,16 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
   // Streaks: soft segments in the part's 200 (or the section's, or the one hue), narrowing and fading over the note.
   const streakHue = (stem: Stem, g: number): Hue =>
     ledgerHue ? ledgerHue(stem, sectionOfSlot(Math.floor(g))) : palette === 'sections' ? SECTION_HUES[sectionOfSlot(Math.floor(g)) % SECTION_HUES.length] : palette in RAMPS && palette !== 'grey' ? (palette as Hue) : STEM_HUE[stem]
+  pic.paint = (kind, lv, stem, x, y) => {
+    const cp = colourPlace(x, y, 0, start[stem] ?? 0, stem)
+    if (!pal) {
+      const [r0, t0] = paint(kind, lv, cp.stem, cp.sec, false)
+      return [r0, palette === 'across' || kind === 'ghost' ? t0 : offsetT(t0, cp.stem), 1, 1]
+    }
+    const out = pal.paint({ kind, lv, stem: cp.stem, sec: cp.sec, red: false, g: cp.g, l: cp.l, T, N, u: cp.u, v: cp.v, within: 0.5, offset: p.offset })
+    return [paletteRow(explore, out.row), kind === 'ghost' ? clamp01(out.t) : offsetT(clamp01(out.t), cp.stem), out.alpha ?? 1, out.size ?? 1]
+  }
+  pic.streakColour = (stem) => lin(pal?.streak?.(stem, { g: 0, l: start[stem] ?? 0, T, N, sec: 0 }) ?? RAMPS[streakHue(stem, 0)][1])
   const total = streaks.reduce((x, s) => x + (s.g1 - s.g0), 0)
   const segStep = 0.5 * Math.max(1, Math.ceil((total * 2) / BUDGET))
   for (const { l, g0, g1, v } of streaks) {
@@ -662,7 +678,61 @@ function fieldsOf(
   return pic
 }
 
-const MOTION_KEYS = new Set(['motion', 'motionAmount', 'motionSpeed', ...motionKeys, ...dotShapeKeys])
+// (Manual's own settings and placed marks only change what's drawn on top, not the picture.)
+const MOTION_KEYS = new Set(['motion', 'motionAmount', 'motionSpeed', ...motionKeys, ...dotShapeKeys, 'marks', 'canvas', 'react', 'pop', 'breathe'])
+
+/** Weight a placed mark hazes as. */
+const PLACED_WEIGHT = (k: Placed['k'], lv: number) => (lv > 0.6 ? SOLID : k === 'dot' ? HEAVY : k === 'soft' ? MEDIUM : k === 'ghost' ? 0 : HAIR)
+const LOOK: Record<Placed['k'], 'ghost' | 'base' | 'event'> = { dot: 'event', soft: 'base', ghost: 'ghost', streak: 'base', blob: 'event' }
+
+/**
+ * Marks placed by hand (Manual), live with the music: each pulls its weight from its part's loudness
+ * (`react`), pops on its part's hits (`pop`) and breathes with it (`breathe`), painted as Dots paints a
+ * dot of that kind and weight in that place. Dots and ghosts go in with the picture's marks (so they haze
+ * with it), streaks behind, blobs in front.
+ */
+function drawPlaced(
+  placed: Placed[], pic: Picture, p: Record<string, any>, H: number, audio: FrameContext['audio'], hits: Record<Stem, number>,
+  out: { marks: BarSpec[]; stems: number[]; weights: number[]; sections: number[]; back: BlobSpec[]; front: BlobSpec[] },
+) {
+  for (const m of placed) {
+    const level = clamp01(audio.stems[m.s]?.level ?? 0)
+    const hit = hits[m.s] ?? 0
+    const lv = clamp01(m.lv + (p.react ?? 1) * (level - 0.3) * 0.8 + (p.pop ?? 0.6) * hit * 0.5)
+    const grow = Math.max(0.2, 1 + (p.breathe ?? 0.3) * 0.5 * (level - 0.3) + (p.pop ?? 0.6) * 0.35 * hit)
+    const x = m.x * H, y = m.y * H
+    const rot = (-m.r * Math.PI) / 180
+    if (m.k === 'streak') {
+      out.back.push({
+        // (A streak's soft edge spreads past its size: drawn a little smaller, it fills its box.)
+        x, y, rx: (m.w * H * grow) * 0.36, ry: m.h * H * 0.36, rotation: rot, softness: 1, form: 1,
+        color: pic.streakColour?.(m.s) ?? lin(RAMPS[STEM_HUE[m.s]][1]), alpha: clamp01(p.streak ?? 0.85) * (0.5 + 0.5 * lv),
+      })
+      continue
+    }
+    if (m.k === 'blob') {
+      out.front.push({
+        x, y, rx: (m.w * H * grow) / 2, ry: (m.h * H * grow) / 2, rotation: rot,
+        softness: p.softness ?? 0.7, wobble: p.wobble ?? 0.15, seed: mod(m.x * 7.31 + m.y * 3.17, 1),
+        form: BLOB_FORMS[p.form as keyof typeof BLOB_FORMS] ?? BLOB_FORMS.blob,
+        color: lin(RAMPS[STEM_HUE[m.s]][2]), color2: lin(RAMPS[STEM_HUE[m.s]][1]), gradient: BLOB_GRADIENTS.radial,
+        alpha: clamp01(p.opacity ?? 0.88) * (0.45 + 0.55 * lv), grain: p.fieldGrain ?? 0,
+      })
+      continue
+    }
+    const kind = LOOK[m.k]
+    const [row, t, am, sm] = pic.paint?.(kind, lv, m.s, x, y) ?? [ROW_INK, kind === 'ghost' ? 0.22 : 0.3 + 0.6 * lv, 1, 1]
+    const w = m.w * H * grow * sm, h = m.h * H * grow * sm
+    const r = Math.min(w, h) / 2
+    out.marks.push({
+      x, y, w, h, radius: r, rotation: rot, t0: t, t1: t, row, alpha: am * (m.k === 'ghost' ? clamp01(p.ghost ?? 0.7) : m.k === 'soft' ? lerp(0.6, 1, lv) : 1),
+      feather: Math.max(0.5, (p.soft ?? 0.4) * r * 0.6), stem: ORDER.indexOf(m.s),
+    })
+    out.stems.push(ORDER.indexOf(m.s))
+    out.weights.push(PLACED_WEIGHT(m.k, lv))
+    out.sections.push(0)
+  }
+}
 
 function create(): SubInstance {
   let pic = empty()
@@ -678,6 +748,9 @@ function create(): SubInstance {
   const move: MarkMove = { dx: 0, dy: 0, size: 1, alpha: 1, t: 0, lit: 0, hueBySize: 0 }
   let weights: number[] = []
   const own: Record<string, any> = {}
+  // Manual: each part's hits, decaying, and the placed marks drawn this frame.
+  const hits = { vocals: 0, instruments: 0, drums: 0, bass: 0 } as Record<Stem, number>
+  const placedOut = { marks: [] as BarSpec[], stems: [] as number[], weights: [] as number[], sections: [] as number[], back: [] as BlobSpec[], front: [] as BlobSpec[] }
 
   return {
     update({ layers, viewport, ink, time, dt, audio }, comp, p) {
@@ -692,10 +765,14 @@ function create(): SubInstance {
       for (const layer of [bars, layers.barsFar.bars, layers.barsMid.bars])
         PALETTES.forEach((pl, i) => pl.rows.forEach((hexes, r) => layer.setGradient(hexes, paletteRow(i, r))))
       layers.grain.value = p.paper
-      if (!comp.notes.length && !comp.analysis) return
+      // Manual: marks placed by hand, over the picture or (canvas blank) alone.
+      const placed = decodePlaced(p.marks)
+      const blank = p.canvas === 'blank'
+      const song = comp.notes.length > 0 || !!comp.analysis
+      if (!song && !placed.length) return
 
       let a = comp.analysis
-      if (!a) {
+      if (!a && song) {
         if (guessFor !== comp.version) {
           guess = fromNotes(comp)
           guessFor = comp.version
@@ -704,7 +781,7 @@ function create(): SubInstance {
       }
       // Motion settings move the picture, they don't regenerate it.
       const k = `${comp.version}:${W}x${H}:${JSON.stringify(p, (key, v) => (MOTION_KEYS.has(key) ? undefined : v))}`
-      if (k !== key) {
+      if (a && k !== key) {
         key = k
         // Fit the blob layer: fewer rows until the dots do.
         let rows = Math.max(8, Math.round(p.rows))
@@ -724,8 +801,8 @@ function create(): SubInstance {
       let marks = pic.marks
       const kind = motionOf(p.motion)
       if (kind && pic.grid && p.motionAmount > 0) {
-        if (motionKey !== `${k}:${kind.id}`) {
-          motionKey = `${k}:${kind.id}`
+        if (motionKey !== `${key}:${kind.id}`) {
+          motionKey = `${key}:${kind.id}`
           motion = kind.create(pic.info)
           moved = pic.marks.map((m) => ({ ...m }))
           weights = [...pic.weights]
@@ -754,11 +831,34 @@ function create(): SubInstance {
         for (const o of marks) shapeDot(o, p, time)
       } else if (marks === moved) for (const o of moved) o.rotation = 0
 
-      if (pic.ruling) bars.push(pic.ruling)
-      const keep = kind && pic.grid && p.motionAmount > 0 && kind.streaks ? clamp01(kind.streaks(own, clamp01(p.motionAmount))) : 1
-      for (const s of pic.streaks) if (keep > 0.003) back.push(keep < 1 ? { ...s, alpha: (s.alpha ?? 1) * keep } : s)
-      for (const b of pic.dots) front.push(b)
-      if (p.hazeBlur > 0) drawHaze(layers, { ...pic, marks, weights: marks === moved ? weights : pic.weights, section: (i) => pic.sections[i] }, p, ink)
+      let hazeOf: { marks: BarSpec[]; stems: number[]; weights: number[]; section: (i: number) => number } = {
+        marks, stems: pic.stems, weights: marks === moved ? weights : pic.weights, section: (i) => pic.sections[i],
+      }
+      if (blank) {
+        marks = []
+        hazeOf = { marks: [], stems: [], weights: [], section: () => 0 }
+      } else {
+        if (pic.ruling) bars.push(pic.ruling)
+        const keep = kind && pic.grid && p.motionAmount > 0 && kind.streaks ? clamp01(kind.streaks(own, clamp01(p.motionAmount))) : 1
+        for (const s of pic.streaks) if (keep > 0.003) back.push(keep < 1 ? { ...s, alpha: (s.alpha ?? 1) * keep } : s)
+        for (const b of pic.dots) front.push(b)
+      }
+      if (placed.length) {
+        const fall = Math.exp(-dt / 0.3)
+        for (const stem of STEMS) hits[stem] = Math.max(hits[stem] * fall, audio.stems[stem]?.onset ? audio.stems[stem].onsetStrength : 0)
+        for (const list of Object.values(placedOut)) list.length = 0
+        drawPlaced(placed, pic, p, H, audio, hits, placedOut)
+        for (const s of placedOut.back) back.push(s)
+        for (const b of placedOut.front) front.push(b)
+        const n = hazeOf.marks.length
+        const base = hazeOf
+        hazeOf = {
+          marks: [...base.marks, ...placedOut.marks], stems: [...base.stems, ...placedOut.stems], weights: [...base.weights, ...placedOut.weights],
+          section: (i) => (i < n ? base.section(i) : 0),
+        }
+        marks = hazeOf.marks
+      }
+      if (p.hazeBlur > 0) drawHaze(layers, hazeOf, p, ink)
       const crisp = clamp01(p.crisp)
       // (By size, not radius: square dots have none.)
       if (crisp > 0.001) for (const m of marks) if ((m.alpha ?? 1) > 0.003 && Math.min(m.w, m.h) > 0.1) bars.push(crisp < 1 ? { ...m, alpha: (m.alpha ?? 1) * crisp } : m)

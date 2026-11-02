@@ -694,7 +694,8 @@ html, body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inte
 
 /* The bottom bar: record, back to the start and play, then the toolbar, centred. */
 .bottom-bar {
-  position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 6; pointer-events: none;
+  /* (Over the Compose editing layer.) */
+  position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 15; pointer-events: none;
   display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px;
 }
 /* (On a narrow window the toolbar wraps onto its own line rather than pushing these off the edge.) */
@@ -710,3 +711,47 @@ html, body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inte
 }
 .transport-group > button:hover { background: rgb(255 255 255 / 0.1); }
 .transport-group > .record.on { background: #ff3b30; }
+
+/* Compose: the card's tools, and the editing overlay on the stage (ui/compose.ts). */
+.compose-intro { display: flex; flex-direction: column; gap: 10px; }
+.compose-wide, .compose-actions button {
+  padding: 8px 10px; border: 0; border-radius: 8px; background: #2a2d33; color: var(--panel-fg);
+  font: 600 11px/1 inherit; font-family: inherit; cursor: pointer; transition: background 0.15s var(--ease);
+}
+.compose-wide:hover, .compose-actions button:hover:not(:disabled) { background: #34373e; }
+.compose-actions button:disabled { opacity: 0.35; cursor: default; }
+.compose-editor { display: flex; flex-direction: column; gap: 8px; }
+.compose-editor[hidden], .compose-intro[hidden] { display: none; }
+.compose-editor h5 { margin: 6px 2px 0; font-size: 10px; font-weight: 650; letter-spacing: 0.1em; text-transform: uppercase; color: var(--panel-dim); }
+.compose-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.compose-tools button {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px 7px; border: 0; border-radius: 9px;
+  background: var(--panel-input); color: #b9bcc3; font: 600 10.5px/1 inherit; font-family: inherit; cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.compose-tools button svg { fill: none; stroke: currentColor; }
+.compose-tools button:hover { background: #24262b; color: var(--panel-fg); }
+.compose-tools button.on { background: var(--panel-fg); color: #0b0c0f; }
+.compose-parts { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.compose-parts button {
+  --c: #fff; display: flex; align-items: center; gap: 7px; padding: 7px 9px; border: 0; border-radius: 8px;
+  background: var(--panel-input); color: #b9bcc3; font: 600 11px/1 inherit; font-family: inherit; cursor: pointer; text-align: left;
+}
+.compose-parts button i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+.compose-parts button.on { color: var(--panel-fg); box-shadow: inset 0 0 0 1.5px var(--c); }
+.compose-weight { display: grid; grid-template-columns: 56px 1fr 36px; align-items: center; gap: 8px; padding: 2px 4px; color: var(--panel-dim); font-size: 11px; }
+.compose-weight input { width: 100%; accent-color: var(--panel-accent); }
+.compose-weight b { font-weight: 500; color: var(--panel-fg); text-align: right; font-variant-numeric: tabular-nums; }
+.compose-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.compose-status { margin-top: 2px; }
+
+.compose-overlay { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; display: none; touch-action: none; overflow: visible; }
+.compose-overlay .compose-hover { fill: none; stroke: #8fb4ff; stroke-width: 1.5; }
+.compose-overlay .compose-picked { fill: none; stroke: #8fb4ff; stroke-width: 1; }
+.compose-overlay .compose-box { fill: none; stroke: #8fb4ff; stroke-width: 1.25; }
+.compose-overlay .compose-handle { fill: #fff; stroke: #8fb4ff; stroke-width: 1.25; }
+.compose-overlay .compose-marquee { fill: rgb(143 180 255 / 0.1); stroke: #8fb4ff; stroke-width: 1; }
+.compose-overlay .compose-size {
+  fill: #fff; font: 600 10px/1 -apple-system, system-ui, sans-serif; text-anchor: middle;
+  paint-order: stroke; stroke: #3d6fe0; stroke-width: 12px; stroke-linejoin: round;
+}
