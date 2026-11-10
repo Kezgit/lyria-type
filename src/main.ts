@@ -1,12 +1,11 @@
 import './ui/styles.css'
+import './ui/theme.css'
 import { AudioEngine } from './audio/audioEngine'
 import { Engine } from './engine/engine'
 import { applyScene } from './app/scene'
 import { emit, on, state } from './app/state'
 import defaultScene from './app/defaultScene.json'
 import { buildPanel } from './ui/panel'
-import { buildPicker } from './ui/picker'
-import { setSeek } from './modes/orchestra/conductor'
 import { autosave, restoreSession } from './app/session'
 import { buildRecorder } from './ui/recorder'
 import { buildNotch } from './ui/notch'
@@ -18,24 +17,14 @@ await applyScene(defaultScene)
 const audio = new AudioEngine()
 const engine = new Engine(document.getElementById('stage')!, audio)
 const panel = buildPanel(document.getElementById('panel')!, audio, engine)
-buildPicker(document.getElementById('stage')!, engine)
-setSeek((step) => audio.seek(step))
 // Pick up where things were left (over the default scene), then keep saving as they change.
 await restoreSession()
-// Letters given to layers used to be the Orchestra's own; carry them over to the shared assignment.
-if (!state.letterParts && state.modeParams.orchestra?.assign) state.letterParts = state.modeParams.orchestra.assign
+// A mode that's gone (the full-app branch has them) falls back to the Sequencer.
+if (!state.modeParams[state.modeId]) state.modeId = 'sequencer'
 autosave()
 
 await audio.useDemo()
 await engine.start()
-
-// A new song starts from what is heard: notes placed by hand on the rack were for the last one.
-audio.onSourceChange(() => {
-  for (const [key, v] of Object.entries(state.modeParams.orchestra)) {
-    if (key.endsWith('Steps') && typeof v === 'string') state.modeParams.orchestra[key] = '0'.repeat(16)
-  }
-  emit('params')
-})
 
 // Loads paused; this button (a user gesture, which browsers need before
 // audio can start) plays and pauses, in step with the panel's Play button.
@@ -84,7 +73,6 @@ showTransport()
 onSpaceTap(togglePlay)
 buildNotch(document.getElementById('stage')!, audio, engine, {
   audio: () => panel.open('Audio'),
-  colours: () => panel.goTo('Gradient map', 'Colour', 'Ink', 'Recolour', 'Look'),
 }).appendChild(volume)
 
 // Back to the start of the song, beside play.
@@ -113,6 +101,16 @@ transportGroup.className = 'transport-group'
 transportGroup.append(...[stage.querySelector('.record'), restart, transport].filter((b): b is HTMLElement => !!b))
 bottom.append(transportGroup, stage.querySelector('.toolbar')!)
 stage.appendChild(bottom)
+
+// Light or dark (light by default; remembered).
+document.getElementById('themeToggle')?.addEventListener('click', () => {
+  const dark = document.documentElement.dataset.theme !== 'dark'
+  if (dark) document.documentElement.dataset.theme = 'dark'
+  else delete document.documentElement.dataset.theme
+  try {
+    localStorage.setItem('lyria-type:theme', dark ? 'dark' : 'light')
+  } catch {}
+})
 
 // Handy for poking at the scene from devtools.
 if (import.meta.env.DEV) Object.assign(window, { engine, audio, state })

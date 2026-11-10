@@ -22,7 +22,7 @@ export const state = {
   layoutId: 'block',
   layoutParams: Object.fromEntries(layouts.map((l) => [l.id, defaults(l.params)])) as Record<string, Record<string, any>>,
 
-  modeId: 'orchestra',
+  modeId: 'sequencer',
   modeParams: Object.fromEntries(modes.map((m) => [m.id, defaults(m.params)])) as Record<string, Record<string, any>>,
 
   /**

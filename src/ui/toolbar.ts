@@ -41,14 +41,13 @@ export function buildToolbar(engine: Engine, viewChanged: () => void, panel: { o
     bar.appendChild(b)
     return b
   }
-  const gap = () => bar.appendChild(Object.assign(document.createElement('span'), { className: 'toolbar-gap' }))
+  const gap = () => bar.appendChild(Object.assign(document.createElement('span'), { className: 'toolbar-gap' })) as HTMLElement
 
   // --- Panel helpers: a Mode group by its title, a button by its text.
   const goTo = (prefix: string) => panel.goTo(prefix)
   const panelButton = (text: string) => [...document.querySelectorAll<HTMLButtonElement>('#panel button')].find((b) => b.textContent === text)
 
   // --- View --------------------------------------------------------------------
-  const pick = button('pick', 'Pick letters (V)', () => { viewTool.hand = false; viewChanged() })
   const hand = button('hand', 'Hand: drag to pan (H, or hold space)', () => { viewTool.hand = !viewTool.hand; viewChanged() })
   gap()
   button('zoomOut', 'Zoom out (⌘ −, or pinch)', () => { zoomBy(engine, 0.8); viewChanged() })
@@ -59,7 +58,8 @@ export function buildToolbar(engine: Engine, viewChanged: () => void, panel: { o
   bar.appendChild(zoomText)
   button('zoomIn', 'Zoom in (⌘ +, or pinch)', () => { zoomBy(engine, 1.25); viewChanged() })
   button('fit', 'Fit the frame (⌘ 0)', () => { Object.assign(state.view, { zoom: 1, x: 0, y: 0 }); viewChanged() })
-  gap()
+  // The Sequencer's tools (shown only in it).
+  const seqGap = gap()
 
   // --- Gradient (the Sequencer's) ------------------------------------------------
   const gradient = button('gradient', 'Gradient map settings', () => goTo('Gradient map'))
@@ -76,22 +76,13 @@ export function buildToolbar(engine: Engine, viewChanged: () => void, panel: { o
 
   // Keep the buttons showing what's on.
   const sync = () => {
-    pick.classList.toggle('on', !viewTool.hand && !viewTool.space)
     hand.classList.toggle('on', viewTool.hand || viewTool.space)
     zoomText.textContent = `${Math.round(state.view.zoom * 100)}%`
     const seq = state.modeId === 'sequencer'
     fitGradient.disabled = !seq
     colours.disabled = !seq || state.modeParams.sequencer?.style !== 'dots'
     colours.classList.toggle('on', !!panelButton('Place colours on the stage')?.classList.contains('on'))
-    for (const b of [gradient, place, mask]) {
-      b.disabled = !seq
-      if (!seq) b.title = 'Gradient map: in the Sequencer mode'
-    }
-    if (seq) {
-      gradient.title = 'Gradient map settings'
-      place.title = 'Place the gradient on the stage'
-      mask.title = 'Paint the mask (alt to erase)'
-    }
+    for (const b of [seqGap, gradient, place, fitGradient, colours, mask]) b.hidden = !seq
     place.classList.toggle('on', !!panelButton('Place on the stage')?.classList.contains('on'))
     mask.classList.toggle('on', !!panelButton('Paint the mask')?.classList.contains('on'))
   }

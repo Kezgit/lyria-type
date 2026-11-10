@@ -424,7 +424,7 @@ export function applyMasks(frame: FrameContext, text: unknown, timelineSettings?
       if (tmp.a !== 1) layer.color[o + 3] *= tmp.a
     }
   }
-  for (const layer of [l.bars, l.barsMid.bars, l.barsFar.bars]) bars(layer)
+  for (const layer of [l.bars, l.barsMid.bars, l.barsFar.bars, ...l.hazeByStem.map((h) => h.bars)]) bars(layer)
   for (const layer of [l.front, l.back]) blobs(layer)
   // Marks with their own blend mode, too.
   l.blend.eachSpec((s) => {

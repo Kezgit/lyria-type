@@ -1,7 +1,7 @@
 import type { LetterParts } from './shared/parts'
 import type { ParamSchema } from '../app/params'
 import type { AudioFeatures } from '../audio/features'
-import type { Backdrop, Grain } from '../engine/backdrop'
+import type { Backdrop, Grain, SoftGrain } from '../engine/backdrop'
 import type { BarLayer } from '../engine/barLayer'
 import type { BlobLayer } from '../engine/blobLayer'
 import type { GlyphLayer } from '../engine/glyphLayer'
@@ -12,6 +12,7 @@ import type { FieldFx } from '../engine/fieldFx'
 import type { StretchFx } from '../engine/stretchFx'
 import type { StencilFx } from '../engine/stencilFx'
 import type { BlendFx } from '../engine/blendFx'
+import type { CanvasLayer } from '../engine/canvasLayer'
 import type { Placement, Viewport } from '../layout/types'
 import type { ShapedGlyph, ShapedText } from '../text/shaping'
 
@@ -45,6 +46,12 @@ export interface Layers {
   stencil: StencilFx
   /** Marks with their own blend mode: add them each frame (`blend.add(mode, bar, blob)`); drawn over the frame. */
   blend: BlendFx
+  /** A 2D-canvas picture as the frame (set `enabled`, draw into `context(w, h)`, then `changed()`). */
+  canvas: CanvasLayer
+  /** The haze as one blurred layer per sound (ORDER: vocals, instruments, drums, bass); start empty. */
+  hazeByStem: BlurredBarLayer[]
+  /** Soft grain over everything (0..1). */
+  softGrain: SoftGrain
 }
 
 export interface FrameContext {
@@ -96,6 +103,8 @@ export interface ModeDefinition {
   groups?: Record<string, string[]>
   /** Folders that depend on the current values (e.g. a sub-mode's own controls); overrides `groups`. */
   groupsFor?(values: Record<string, any>): Record<string, string[]>
+  /** Groups open on a fresh load (the rest start folded); all open when unset. */
+  openGroups?: string[]
   /** Param keys whose change re-renders the panel (e.g. a sub-mode picker). */
   rebuildOn?: string[]
   presets?: Record<string, ModePreset>

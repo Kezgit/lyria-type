@@ -371,7 +371,7 @@ function gradientMap(layer: BarLayer, p: Record<string, any>, W: number, H: numb
 function maskMarks(layers: FrameContext['layers'], p: Record<string, any>, W: number, H: number) {
   if (!masking(p) || p.maskWhat !== 'marks') return
   const k = clamp01(p.maskStrength)
-  for (const layer of [layers.bars, layers.barsFar.bars, layers.barsMid.bars, layers.field.injectBars]) {
+  for (const layer of [layers.bars, layers.barsFar.bars, layers.barsMid.bars, ...layers.hazeByStem.map((h) => h.bars), layers.field.injectBars]) {
     for (let i = 0; i < layer.count; i++) {
       const o = i * 4
       layer.grad[o + 2] *= 1 - k * maskAt(p, layer.pos[o], layer.pos[o + 1], W, H)
@@ -564,9 +564,10 @@ export function finish(frame: FrameContext, p: Record<string, any>, sub: string)
     const plain = { ...q, vocals: 1, instruments: 1, drums: 1, bass: 1 }
     finishBars(layers.barsFar.bars, plain, ink, W, H, time, false)
     finishBars(layers.barsMid.bars, plain, ink, W, H, time, false)
+    for (const h of layers.hazeByStem) finishBars(h.bars, plain, ink, W, H, time, false)
   }
   // Dots draws its haze itself: the gradient map repaints it too.
-  if (isDots(sub)) for (const l of [layers.barsFar.bars, layers.barsMid.bars]) gradientMap(l, p, W, H)
+  if (isDots(sub)) for (const l of [layers.barsFar.bars, layers.barsMid.bars, ...layers.hazeByStem.map((h) => h.bars)]) gradientMap(l, p, W, H)
   finishBars(layers.field.injectBars, q, ink, W, H, time)
   finishGlyphs(layers.outlines, q, inkHex, W, H)
   if (sub === 'stretch') {

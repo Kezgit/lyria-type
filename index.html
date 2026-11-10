@@ -4,11 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Lyria Type</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Google+Sans+Text:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script>
+      // The theme before anything draws (light unless dark was picked).
+      try { if (localStorage.getItem('lyria-type:theme') === 'dark') document.documentElement.dataset.theme = 'dark' } catch {}
+    </script>
   </head>
   <body>
     <div id="app">
-      <div id="stage"></div>
-      <aside id="panel"></aside>
+      <header id="header">
+        <span class="brand-title">Lyria Type</span>
+        <div class="header-actions">
+          <button class="icon-btn" id="themeToggle" type="button" aria-label="Light or dark" title="Light or dark">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-2V5a7 7 0 0 1 0 14z"/></svg>
+          </button>
+        </div>
+      </header>
+      <aside id="panel" aria-label="Settings"></aside>
+      <main id="stage"></main>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

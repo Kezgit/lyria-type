@@ -3,33 +3,26 @@ import type { AudioEngine } from '../audio/audioEngine'
 import type { Engine } from '../engine/engine'
 import { SHOWN, stemColours } from './stemColours'
 
-// The notch: a small black island at the top of the stage, like a phone's
-// now-playing activity. A disc in the stems' colours (turning while the music
-// plays; click it for the colour settings), what's playing, and a live
-// waveform of the whole mix in those colours (click for the Audio card).
-// Beside it, a second pill for the volume.
+// The notch: a small island at the top of the stage, like a phone's
+// now-playing activity: what's playing and a live waveform of the whole mix in
+// the stems' colours (click for the Audio tab). Beside it, a pill for the volume.
 
-const BARS = 26
+const BARS = 20
 
 /** Returns the volume pill, for the volume control to go in. */
-export function buildNotch(stage: HTMLElement, audio: AudioEngine, engine: Engine, open: { audio(): void; colours(): void }) {
+export function buildNotch(stage: HTMLElement, audio: AudioEngine, engine: Engine, open: { audio(): void }) {
   const island = document.createElement('div')
   island.className = 'island'
   const notch = document.createElement('div')
   notch.className = 'notch'
   notch.title = 'Audio settings'
-  notch.innerHTML = '<button class="notch-disc" title="Colour settings"></button><span class="notch-info"><b></b><small></small></span><canvas class="notch-wave"></canvas>'
+  notch.innerHTML = '<span class="notch-info"><b></b><small></small></span><canvas class="notch-wave"></canvas>'
   const volume = document.createElement('div')
   volume.className = 'notch volume-pill'
   volume.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 010 6M18 6.5a7.5 7.5 0 010 11"/></svg>'
   island.append(notch, volume)
   stage.appendChild(island)
   notch.addEventListener('click', open.audio)
-  const disc = notch.querySelector<HTMLElement>('.notch-disc')!
-  disc.addEventListener('click', (e) => {
-    e.stopPropagation()
-    open.colours()
-  })
   const title = notch.querySelector('b')!
   const sub = notch.querySelector('small')!
   const canvas = notch.querySelector('canvas')!
@@ -37,7 +30,7 @@ export function buildNotch(stage: HTMLElement, audio: AudioEngine, engine: Engin
 
   const show = () => {
     notch.classList.toggle('playing', state.audio.playing)
-    sub.textContent = state.audio.playing ? 'Playing' : 'Paused · space to play'
+    sub.textContent = state.audio.playing ? 'Playing' : 'Space to play'
   }
   on('audio', show)
   show()
@@ -60,7 +53,6 @@ export function buildNotch(stage: HTMLElement, audio: AudioEngine, engine: Engin
     node.getByteFrequencyData(bins)
     const cols = stemColours(engine)
     const stops = SHOWN.map((s) => cols[s])
-    disc.style.background = `conic-gradient(${[...stops, stops[0]].join(', ')})`
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, w, h)

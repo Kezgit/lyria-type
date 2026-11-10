@@ -3,15 +3,9 @@ import type { BlobLayer } from '../../engine/blobLayer'
 import type { ParamSchema } from '../../app/params'
 import type { FrameContext, ModeDefinition, ModeInstance, ModePreset } from '../types'
 import { Composition } from './composition'
-import { manual } from './manual'
 import { applyMasks } from './masks'
 import { finish, finishGroups, finishParams, stretchByStem, typedChars } from './finish'
-import { barcode } from './barcode'
 import { dots } from './dots'
-import { ledger } from './ledger'
-import { pulse } from './pulse'
-import { sq } from './sq'
-import { stretch } from './stretch'
 
 // Sequencer: the music as a generated graphic, no text. The whole track is
 // read once into a Composition; the chosen sub-mode generates its picture from
@@ -38,7 +32,8 @@ export interface SubInstance {
   update(frame: FrameContext, comp: Composition, params: Record<string, any>): void
 }
 
-const SUBS: SubMode[] = [barcode, pulse, stretch, dots, ledger, sq, manual]
+// Only Dots: the other styles (Barcode, Pulse, Stretch, Ledger, SQ, Manual) are on the full-app branch.
+const SUBS: SubMode[] = [dots]
 
 const key = (sub: SubMode, k: string) => `${sub.id}_${k}`
 
@@ -96,23 +91,30 @@ for (const sub of SUBS) {
 
 const subOf = (values: Record<string, any>) => SUBS.find((s) => s.id === values.style) ?? SUBS[0]
 
-/** The colour groups, which sit right under the picture's layout. */
-const COLOUR_GROUPS = ['Colour', 'Ink', 'Recolour', 'Gradient map', 'Mask']
+/**
+ * The panel's sections, most used first: how the picture is laid out and coloured, how its layers mix; then
+ * the marks themselves; then how the music is read and moves it; the rarer tools last. The shared Stems
+ * amounts join the style's Layers (each sound's layer, by its amount).
+ */
+const SECTION_ORDER = [
+  'Layout', 'Colour', 'Gradient map', 'Recolour', 'Layers', 'Dots', 'Accent dots', 'Haze', 'Grain',
+  'Song window', 'Reading the music', 'Timing', 'Motion', 'Fields', 'Dot shape', 'Mark shape', 'Mask', 'Characters',
+]
+/** Open on a fresh load; the rest start folded (the panel remembers what you open). */
+export const OPEN_SECTIONS = ['Layout', 'Colour', 'Layers']
 
 function groupsFor(values: Record<string, any>) {
   const sub = subOf(values)
-  const own = Object.entries(sub.groups).map(([title, keys]) => [title, keys.map((k) => key(sub, k))] as [string, string[]])
-  const shared = Object.entries(finishGroups(sub.id, sub.groups))
-  const colour = [...own, ...shared].filter(([t]) => COLOUR_GROUPS.includes(t))
-  const rest = own.filter(([t]) => !COLOUR_GROUPS.includes(t))
-  // After Layout (or the page, or the first group).
-  const after = ['Layout', 'Page'].map((t) => rest.findIndex(([r]) => r === t)).find((i) => i >= 0) ?? 0
-  rest.splice(after + 1, 0, ...colour)
-  return {
-    Timing: ['hold', 'scroll', 'scrollSpeed'],
-    ...Object.fromEntries(rest),
-    ...Object.fromEntries(shared.filter(([t]) => !COLOUR_GROUPS.includes(t))),
+  const all: Record<string, string[]> = { Timing: ['hold', 'scroll', 'scrollSpeed'] }
+  for (const [title, keys] of Object.entries(sub.groupsFor?.(values) ?? sub.groups)) all[title] = keys.map((k) => key(sub, k))
+  for (const [title, keys] of Object.entries(finishGroups(sub.id, sub.groups))) {
+    const t = title === 'Stems' ? 'Layers' : title
+    all[t] = t === 'Layers' ? [...keys, ...(all.Layers ?? [])] : keys
   }
+  const ordered: Record<string, string[]> = {}
+  for (const t of SECTION_ORDER) if (all[t]?.length) ordered[t] = all[t]
+  for (const [t, keys] of Object.entries(all)) if (!(t in ordered) && keys.length) ordered[t] = keys
+  return ordered
 }
 
 /** Where everything a bar layer drew this frame goes when the picture scrolls by (dx, dy), wrapping round. */
@@ -197,6 +199,7 @@ export const sequencer: ModeDefinition = {
   label: 'Sequencer',
   params,
   groupsFor,
+  openGroups: OPEN_SECTIONS,
   rebuildOn: ['style'],
   presetsFor: (values) => presets.get(subOf(values).id)!,
   create,

@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import { Backdrop, Grain } from './backdrop'
+import { Backdrop, Grain, SoftGrain } from './backdrop'
 import { BarLayer } from './barLayer'
 import { BlobLayer } from './blobLayer'
 import { GlyphLayer } from './glyphLayer'
@@ -10,6 +10,7 @@ import { FieldFx } from './fieldFx'
 import { StretchFx } from './stretchFx'
 import { StencilFx } from './stencilFx'
 import { BlendFx } from './blendFx'
+import { CanvasLayer } from './canvasLayer'
 import { HALO_ATLAS, SdfAtlas } from '../text/atlas/sdfAtlas'
 import { shapeText, type ShapedGlyph, type ShapedText } from '../text/shaping'
 import { ensureFont, getFont } from '../text/fonts/registry'
@@ -57,6 +58,10 @@ export class Engine {
   /** Bars blurred together as one image, under the crisp ones: lightly (mid) and heavily (far). */
   readonly barsFar = new BlurredBarLayer(MAX_BLOBS, 3)
   readonly barsMid = new BlurredBarLayer(MAX_BLOBS, 4)
+  /** The haze as one layer per sound (vocals, instruments, drums, bass), each blurred apart and laid on in turn. */
+  readonly hazeByStem = Array.from({ length: 4 }, () => new BlurredBarLayer(MAX_BLOBS, 3))
+  /** Soft grain over everything (Stacked line's). */
+  readonly softGrain = new SoftGrain()
   /** Glyphs and bars merged into gooey forms (metaball morphs), just under the text. */
   readonly goo: GooLayer
   readonly front = new BlobLayer(MAX_BLOBS, 20)
@@ -67,6 +72,8 @@ export class Engine {
   readonly stencil: StencilFx
   /** Marks with their own blend mode (Manual's placed elements), composited over the frame. */
   readonly blend = new BlendFx()
+  /** A picture drawn with the 2D canvas (Stacked line), shown as the frame. */
+  readonly canvas2d = new CanvasLayer(1)
 
   private text: ShapedText | null = null
   private placements: Placement[] = []
@@ -94,9 +101,9 @@ export class Engine {
     this.field = new FieldFx(MAX_GLYPHS, this.haloAtlas.texture, this.haloAtlas.sdf, 12)
     this.stencil = new StencilFx(this.atlas.texture, this.atlas.sdf)
     this.scene.add(
-      this.backdrop.mesh, this.back.mesh, this.barsFar.composite, this.barsMid.composite, this.bars.mesh, this.goo.composite, this.glyphs.mesh,
+      this.backdrop.mesh, this.canvas2d.mesh, this.back.mesh, this.barsFar.composite, ...this.hazeByStem.map((h) => h.composite), this.barsMid.composite, this.bars.mesh, this.goo.composite, this.glyphs.mesh,
       this.field.composite, this.halosFar.composite, this.halosMid.composite, this.outlines.mesh,
-      this.front.mesh, this.grain.mesh,
+      this.front.mesh, this.grain.mesh, this.softGrain.mesh,
     )
 
     new ResizeObserver(() => this.resize()).observe(container)
@@ -160,8 +167,11 @@ export class Engine {
   /** The frame (FRAME_ASPECT) fitted in the stage, in whole CSS px (width a multiple of 16, so 16:9 is exact). */
   private resize() {
     if (this.exporting) return
-    const { clientWidth: cw, clientHeight: ch } = this.container
-    if (!cw || !ch) return
+    // Inside the stage's padding (room for the notch above and the toolbar below).
+    const cs = getComputedStyle(this.container)
+    const cw = this.container.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+    const ch = this.container.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+    if (!(cw > 0) || !(ch > 0)) return
     const w = Math.max(16, Math.floor(Math.min(cw, ch * FRAME_ASPECT) / 16) * 16)
     const h = Math.round(w / FRAME_ASPECT)
     // Wrapped text follows the view's width.
@@ -242,6 +252,13 @@ export class Engine {
     this.bars.count = 0
     this.blend.clear()
     this.barsFar.bars.count = 0
+    for (const h of this.hazeByStem) {
+      h.bars.count = 0
+      h.stretch = 1
+      h.blend = 'normal'
+    }
+    this.barsFar.blend = 'normal'
+    this.softGrain.value = 0
     this.barsMid.bars.count = 0
     this.goo.glyphs.count = 0
     this.glyphs.mask.on.value = 0
@@ -259,6 +276,7 @@ export class Engine {
     this.bars.blend = 'normal'
     this.backdrop.mesh.visible = false
     this.grain.value = 0
+    this.canvas2d.enabled = false
     const wasStretching = this.stretch.enabled
     this.stretch.enabled = false
     this.stretch.clip = null
@@ -316,9 +334,11 @@ export class Engine {
           backdrop: this.backdrop, back: this.back, bars: this.bars, barsMid: this.barsMid, barsFar: this.barsFar, goo: this.goo, glyphs: this.glyphs,
           outlines: this.outlines, halosMid: this.halosMid, halosFar: this.halosFar,
           front: this.front, grain: this.grain, stretch: this.stretch, field: this.field, stencil: this.stencil, blend: this.blend,
+          canvas: this.canvas2d, hazeByStem: this.hazeByStem, softGrain: this.softGrain,
         },
       })
     }
+    this.canvas2d.sync(this.viewport)
     // Images dropped on the stage: wipe their colours across what the mode drew, ripple or warp (dropFx.ts).
     dropFx.frame(this.viewport.width, this.viewport.height, state.drop)
     if (dropFx.any) {
@@ -344,6 +364,7 @@ export class Engine {
         this.halosFar.render(this.renderer, this.camera)
         this.halosMid.render(this.renderer, this.camera)
         this.barsFar.render(this.renderer, this.camera)
+        for (const h of this.hazeByStem) h.render(this.renderer, this.camera)
         this.barsMid.render(this.renderer, this.camera)
         this.goo.render(this.renderer, this.camera)
         this.renderer.render(this.scene, this.camera)

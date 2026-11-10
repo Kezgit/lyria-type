@@ -127,3 +127,34 @@ export class Grain {
     this.mesh.visible = v > 0
   }
 }
+
+/**
+ * Soft grain (after Stacked line's): a still, fine noise laid over the frame in
+ * an overlay-like blend (2 x noise x frame), so it lightens and darkens the
+ * colours under it rather than speckling over them. Hashed on preview-sized
+ * cells, so an export grains the same.
+ */
+export class SoftGrain {
+  readonly mesh: THREE.Mesh
+  readonly amount = uniform(0)
+
+  constructor() {
+    const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: false })
+    const cell = previewCell(screenCoordinate.xy)
+    const h = fract(fract(dot(cell, vec2(0.06711056, 0.00583715))).mul(52.9829189))
+    // 0.5 leaves the frame as it is; above lightens, below darkens.
+    mat.colorNode = vec4(vec3(h.sub(0.5).mul(this.amount).add(0.5)), 1)
+    mat.blending = THREE.CustomBlending
+    mat.blendEquation = THREE.AddEquation
+    mat.blendSrc = THREE.DstColorFactor
+    mat.blendDst = THREE.SrcColorFactor
+    this.mesh = fullscreen(mat, 49)
+    this.mesh.visible = false
+  }
+
+  /** 0..1 */
+  set value(v: number) {
+    this.amount.value = v
+    this.mesh.visible = v > 0
+  }
+}

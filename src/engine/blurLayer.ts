@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import { float, max, mix, positionGeometry, smoothstep, texture, uniform, uv, vec2, vec4 } from 'three/tsl'
+import { float, max, mix, positionGeometry, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
 import { BarLayer } from './barLayer'
 import { PREVIEW_PIXEL_RATIO } from './pixels'
 
@@ -89,13 +89,34 @@ export abstract class BlurLayer {
     const w = max(float(1).sub(this.edge).mul(0.5), float(0.01))
     // Opacity past 1 pushes the thin, blurred coverage toward solid.
     const a = mix(a0, smoothstep(float(0.5).sub(w), float(0.5).add(w), a0), this.edge).mul(this.opacity).clamp(0, 1)
-    mat.colorNode = vec4(c.rgb.div(max(c.a, float(1e-4))), 1)
-    mat.opacityNode = a
+    const rgb = c.rgb.div(max(c.a, float(1e-4)))
+    this.normalNodes = { color: vec4(rgb, 1), opacity: a }
+    // Multiply: the colour over the page and whatever is under it, so overlaps darken (as ink does).
+    this.multiplyNodes = { color: vec4(mix(vec3(1), rgb, a), 1), opacity: float(1) }
+    mat.colorNode = this.normalNodes.color
+    mat.opacityNode = this.normalNodes.opacity
+    this.mat = mat
     mat.vertexNode = vec4(positionGeometry.xy.mul(2), 0, 1)
     this.composite = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat)
     this.composite.frustumCulled = false
     this.composite.renderOrder = renderOrder
     this.composite.visible = false
+  }
+
+  private mat: THREE.MeshBasicNodeMaterial
+  private normalNodes: { color: any; opacity: any }
+  private multiplyNodes: { color: any; opacity: any }
+  private blendMode: 'normal' | 'multiply' = 'normal'
+
+  /** How the blurred image goes onto the frame: over it, or multiplied into it. */
+  set blend(mode: 'normal' | 'multiply') {
+    if (mode === this.blendMode) return
+    this.blendMode = mode
+    const n = mode === 'multiply' ? this.multiplyNodes : this.normalNodes
+    this.mat.colorNode = n.color
+    this.mat.opacityNode = n.opacity
+    this.mat.blending = mode === 'multiply' ? THREE.MultiplyBlending : THREE.NormalBlending
+    this.mat.needsUpdate = true
   }
 
   /** Size of one target pixel along x, px (half-res, times the stretch); set before `prepare`. */

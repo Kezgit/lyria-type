@@ -114,6 +114,28 @@ const params = {
   gap: { type: 'number', value: 2, min: 0, max: 8, step: 0.25, label: 'space between columns' },
   groupGap: { type: 'number', value: 0, min: 0, max: 4, step: 1, label: 'space between parts' },
   square: { type: 'boolean', value: true, label: 'square dots spacing' },
+  // Laid out as a line or a small grid (after Stacked line): time down the page (columns, as ever) or across
+  // it (each column of the song a line, its parts stacked); columns wrap into rows of `perRow`.
+  flow: { type: 'select', value: 'down', label: 'time runs', options: { 'down (columns)': 'down', 'across (lines)': 'across' } },
+  perRow: { type: 'number', value: 0, min: 0, max: 6, step: 1, label: 'columns per row (0 = one row)' },
+  // Every part on one row (one line of elements, as Stacked line's), their layers over each other.
+  parts: { type: 'select', value: 'lanes', label: 'parts', options: { 'each in its own lanes': 'lanes', 'all on one row': 'row' } },
+  rowGap: { type: 'number', value: 2, min: 0, max: 16, step: 0.25, label: 'space between rows' },
+  stretch: { type: 'number', value: 1, min: 0.25, max: 4, step: 0.05, label: 'spacing along time' },
+
+  // Accent dots (after Stacked line): small crisp dots on the grid, a few per bar, over everything.
+  accents: { type: 'number', value: 0, min: 0, max: 8, step: 1, label: 'accent dots per bar' },
+  accentSize: { type: 'number', value: 0.12, min: 0.03, max: 0.5, step: 0.005, label: 'accent size' },
+  accentOn: { type: 'select', value: 'parts', label: 'accents on', options: { 'one lane per part': 'parts', 'every lane': 'lanes' } },
+  accentColour: { type: 'select', value: 'next', label: 'accent colour', options: { "the next part's": 'next', "its own part's": 'own', ink: 'ink' } },
+
+  // Layers: each sound's dots and haze as its own layer (its opacity is its amount under Layers), laid on
+  // over the page normally or multiplied in, so where sounds overlap their colours deepen rather than mud.
+  hazeLayers: { type: 'select', value: 'together', label: 'haze', options: { 'blended together': 'together', 'a layer per sound': 'sound' } },
+  layerBlend: { type: 'select', value: 'normal', label: 'layers blend', options: { normal: 'normal', multiply: 'multiply' } },
+  layerOpacity: { type: 'number', value: 1, min: 0.05, max: 1, step: 0.01, label: 'layer opacity' },
+  // Grain (Stacked line's): soft, still, in the colours.
+  softGrain: { type: 'number', value: 0, min: 0, max: 100, step: 1, label: 'soft grain' },
 
   floor: { type: 'number', value: 0.1, min: 0, max: 0.6, step: 0.01, label: 'ignore quieter than' },
   gamma: { type: 'number', value: 1.3, min: 0.3, max: 4, step: 0.05, label: 'contrast' },
@@ -171,19 +193,23 @@ const params = {
   ...hazeParams,
   // Past 100%: the blurred haze is thin, so let it be pushed toward solid.
   hazeOpacity: { ...hazeParams.hazeOpacity, max: 10 },
+  crisp: { ...hazeParams.crisp, label: 'show the dots' },
 } as const
 
 const groups: Record<string, string[]> = {
-  Layout: ['style'],
-  Window: ['anchor', 'from', 'span'],
-  Grid: ['rows', 'lanes', 'systems', 'margin', 'gap', 'groupGap', 'square'],
-  Weights: ['floor', 'gamma', 'echo', 'laneFloor', 'held', 'sustain'],
+  Layout: ['style', 'flow', 'parts', 'systems', 'perRow', 'rows', 'lanes', 'margin', 'gap', 'rowGap', 'stretch', 'square', 'groupGap'],
   Colour: ['palette', 'offset', 'accent', 'colRepeat', 'colX0', 'colY0', 'colX1', 'colY1'],
+  Layers: ['hazeLayers', 'layerBlend', 'layerOpacity'],
+  // `crisp`: the matrix dots themselves (0 = only their haze and streaks show, and the accent dots).
+  Dots: ['crisp', 'ghost', 'dotMin', 'dotBase', 'dotEvent', 'soft', 'streak', 'streakWidth', 'ruling', 'rulingDiv'],
+  'Accent dots': ['accents', 'accentSize', 'accentOn', 'accentColour'],
+  Haze: hazeKeys.filter((k) => k !== 'crisp'),
+  Grain: ['paper', 'softGrain'],
+  'Song window': ['anchor', 'from', 'span'],
+  'Reading the music': ['floor', 'gamma', 'echo', 'laneFloor', 'held', 'sustain'],
   Motion: ['motion', 'motionAmount', 'motionSpeed', ...motionKeys],
-  Dots: ['ghost', 'dotMin', 'dotBase', 'dotEvent', 'soft', 'streak', 'streakWidth', 'ruling', 'rulingDiv', 'paper'],
   Fields: ['form', 'size', 'softness', 'opacity', 'tint', 'merge', 'minEvent', 'hats', 'drumGroup', 'wash', 'wobble', 'fieldGrain'],
   'Dot shape': dotShapeKeys,
-  Haze: hazeKeys,
 }
 /** The Fields folder only for the fields style. */
 /** The Fields folder only for the fields style. */
@@ -289,6 +315,8 @@ interface Picture {
   sections: number[]
   streaks: BlobSpec[]
   ruling: BarSpec | null
+  /** Accent dots: crisp, over everything, never hazed. */
+  accents: BarSpec[]
   /** Per mark, what a motion needs to know of it. */
   info: MarkInfo[]
   /** The grid, for motions. */
@@ -298,7 +326,7 @@ interface Picture {
   /** And a streak's colour in a part (linear rgb). */
   streakColour?: (stem: Stem) => RGB
 }
-const empty = (): Picture => ({ dots: [], marks: [], stems: [], weights: [], sections: [], streaks: [], ruling: null, info: [], grid: null })
+const empty = (): Picture => ({ dots: [], marks: [], stems: [], weights: [], sections: [], streaks: [], ruling: null, accents: [], info: [], grid: null })
 
 /** One note or hit, in slots (fractional), for the fields. */
 interface Ev { l: number; g: number; end: number; e: number; w: number; stem: Stem; voice: string }
@@ -433,22 +461,42 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
   const tied = evs.filter((e) => e >= accentAt).length > 2 * Math.ceil(evs.length * p.accent)
   const isRed = (e: number) => (tied ? e > accentAt : e >= accentAt)
 
-  // Geometry: lanes across, rows down, systems side by side with `gap` lanes between; centred.
+  // Geometry. Time down (as ever): lanes across, rows down, systems side by side with `gap` lanes between.
+  // Time across: each system a line, time left to right, its lanes stacked (low parts at the bottom). Either
+  // way the systems wrap into rows of `perRow` (`rowGap` between), and the whole is centred.
   const m = p.margin * Math.min(W, H)
-  const across = S * N + (S - 1) * p.gap
-  let pX = (W - 2 * m) / across, pY = (H - 2 * m) / Rw
+  const across = p.flow === 'across'
+  const cols = Math.round(p.perRow) > 0 ? Math.min(S, Math.round(p.perRow)) : S
+  const sysRows = Math.ceil(S / cols)
+  const rowGap = p.rowGap ?? 2
+  // A system's size in its own units: time slots and lanes.
+  // All on one row: the lanes share one line (so a system is one lane wide).
+  const oneRow = p.parts === 'row'
+  const NL = oneRow ? 1 : N
+  const lane = (l: number) => (oneRow ? 0 : l)
+  const sysW = across ? Rw : NL, sysH = across ? NL : Rw
+  const unitsX = cols * sysW + (cols - 1) * p.gap, unitsY = sysRows * sysH + (sysRows - 1) * rowGap
+  // `stretch` spaces the dots out along time (x when across, y when down).
+  const st = Math.max(0.05, p.stretch ?? 1)
+  const kX = across ? st : 1, kY = across ? 1 : st
+  let pX = (W - 2 * m) / (unitsX * kX), pY = (H - 2 * m) / (unitsY * kY)
   if (p.square) pX = pY = Math.min(pX, pY)
+  pX *= kX
+  pY *= kY
   const d = Math.min(pX, pY)
-  const gridW = across * pX, gridH = Rw * pY
+  const gridW = unitsX * pX, gridH = unitsY * pY
   const left = -gridW / 2, top = gridH / 2
-  /** Centre of slot g (fractional: down the rows) in lane l. */
+  /** Centre of slot g (fractional: along time) in lane l. */
   const at = (g: number, l: number) => {
-    const s = Math.min(S - 1, Math.floor(g / Rw))
-    return { x: left + (s * (N + p.gap) + l + 0.5) * pX, y: top - (g - s * Rw + 0.5) * pY }
+    const s = Math.max(0, Math.min(S - 1, Math.floor(g / Rw)))
+    const c = s % cols, r = Math.floor(s / cols), gr = g - s * Rw
+    return across
+      ? { x: left + (c * (Rw + p.gap) + gr + 0.5) * pX, y: top - (r * (NL + rowGap) + (NL - 1 - lane(l)) + 0.5) * pY }
+      : { x: left + (c * (NL + p.gap) + lane(l) + 0.5) * pX, y: top - (r * (Rw + rowGap) + gr + 0.5) * pY }
   }
 
   pic.grid = { w0, w1, stepsPer, T, N, Rw, S, pX, pY, W, H }
-  if (fields) return fieldsOf(p, { T, N, S, Rw, pX, pY, stepsPer, at, events, loud, strength, laneStem, start, count })
+  if (fields) return fieldsOf(p, { T, N, S, Rw, pX, pY, stepsPer, at, events, loud, strength, laneStem, start, count, across })
 
   // Dots: base dots (or ghosts), events over them, coloured as Barcode's marks.
   const palette: string = p.palette
@@ -459,7 +507,6 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
    * the centre, and a handle half the frame's width out at scale 1), so a dot takes the colour the palette gives
    * the place (lane, slot, part, section) that lands on it; past the edge they mirror, repeat or hold.
    */
-  const span = S * (N + p.gap) - p.gap
   const placed = !(p.colX0 === 0 && p.colY0 === 0 && p.colX1 === 1 && p.colY1 === 0)
   const cAx = p.colX0 * W / 2, cAy = p.colY0 * H / 2
   const cDx = (p.colX1 - p.colX0) * W / 2, cDy = (p.colY1 - p.colY0) * H / 2
@@ -475,10 +522,14 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
     if (!placed) return { g, l, stem, sec: sectionOfSlot(g), u: x / W, v: y / H }
     const rx = x - cAx, ry = y - cAy, c = Math.cos(-cAng), sn = Math.sin(-cAng)
     const lx = (rx * c - ry * sn) / cScale, ly = (rx * sn + ry * c) / cScale
-    const col = fold(Math.round((lx - left) / pX - 0.5), span)
-    const row = fold((top - ly) / pY - 0.5, Rw)
-    const s = Math.min(S - 1, Math.floor(col / (N + p.gap)))
-    let l2 = Math.min(N - 1, col - s * (N + p.gap))
+    // Back from the place to a lane and a time slot (the grid's units, folded past its edges).
+    const ux = fold(across ? (lx - left) / pX - 0.5 : Math.round((lx - left) / pX - 0.5), unitsX)
+    const uy = fold(across ? Math.round((top - ly) / pY - 0.5) : (top - ly) / pY - 0.5, unitsY)
+    const cc = Math.min(cols - 1, Math.floor(ux / (sysW + p.gap))), rr = Math.min(sysRows - 1, Math.floor(uy / (sysH + rowGap)))
+    const inX = Math.min(sysW - 1, ux - cc * (sysW + p.gap)), inY = Math.min(sysH - 1, uy - rr * (sysH + rowGap))
+    const s = Math.min(S - 1, rr * cols + cc)
+    let l2 = oneRow ? (laneStem.findIndex((x) => x === stem) >= 0 ? laneStem.findIndex((x) => x === stem) : 0) : Math.max(0, Math.min(N - 1, Math.round(across ? N - 1 - inY : inX)))
+    const row = across ? inX : inY
     // A blank lane (between parts) takes the nearest part's colours.
     for (let k = 1; laneStem[l2] == null && k < N; k++) {
       if (laneStem[l2 - k] != null) l2 -= k
@@ -546,9 +597,24 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
     pic.weights.push(weight)
     pic.sections.push(sec)
   }
+  // All on one row: per step, only the lane that leads it (a hit before a held sound, the louder before the
+  // quieter), so the line's colour follows whichever part leads; a silent step keeps one ghost.
+  const leader = new Int32Array(T).fill(-1)
+  if (oneRow) {
+    for (let g = 0; g < T; g++) {
+      let bs = 0
+      for (let k = 0; k < N; k++) {
+        if (!laneStem[k]) continue
+        const sc = ev[g * N + k] > 0 ? 1 + ev[g * N + k] : base[g * N + k]
+        if (sc > bs) { bs = sc; leader[g] = k }
+      }
+      if (leader[g] < 0) leader[g] = laneStem.findIndex((x) => x)
+    }
+  }
+  const shown = (g: number, l: number) => !oneRow || leader[g] === l
   for (let g = 0; g < T; g++) {
     for (let l = 0; l < N; l++) {
-      if (!laneStem[l]) continue
+      if (!laneStem[l] || !shown(g, l)) continue
       const e = ev[g * N + l], b = base[g * N + l]
       if (e > 0) dot(g, l, lerp(p.dotBase, p.dotEvent, e) * d, 'event', e, 1, isRed(e), isRed(e) || e > 0.6 ? SOLID : HEAVY)
       else if (b > 0.02) dot(g, l, lerp(p.dotMin, p.dotBase, Math.sqrt(b)) * d, 'base', b, lerp(0.6, 1, b), false, b > 0.5 ? MEDIUM : HAIR)
@@ -582,9 +648,47 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
       const { x, y } = at(g, l)
       // `at` centres on the slot; a streak starts at the onset's slot centre.
       pic.streaks.push({
-        x, y, rx: 0.4 * pX * p.streakWidth * (1 - 0.3 * u), ry: 0.6 * pY * Math.max(1, segStep * 2),
+        x, y,
+        rx: across ? 0.6 * pX * Math.max(1, segStep * 2) : 0.4 * pX * p.streakWidth * (1 - 0.3 * u),
+        ry: across ? 0.4 * pY * p.streakWidth * (1 - 0.3 * u) : 0.6 * pY * Math.max(1, segStep * 2),
         softness: 1, color, alpha: p.streak * (0.5 + 0.5 * v) * (1 - 0.6 * u), form: 1,
       })
+    }
+  }
+  // Accent dots: `accents` per bar, evenly through it, on one lane per part (its middle) or every lane, in a
+  // part's event colour (the next part's, so they stand out, as Stacked line's do) or ink.
+  if (p.accents > 0) {
+    const per = Math.round(p.accents)
+    const r = Math.max(0.5, p.accentSize * d)
+    const lanes = p.accentOn === 'lanes'
+      ? laneStem.map((s, l) => (s ? l : -1)).filter((l) => l >= 0)
+      : oneRow
+        // One row: one accent per point (the parts would only land on each other).
+        ? [start[(Object.keys(start) as Stem[])[0]] ?? 0]
+        : (Object.keys(start) as Stem[]).map((s) => start[s] + Math.floor((count[s] - 1) / 2))
+    for (let bar = Math.floor(w0 / 16); bar * 16 < w1; bar++) {
+      for (let j = 0; j < per; j++) {
+        const step = bar * 16 + ((j + 0.5) * 16) / per
+        if (step < w0 || step >= w1) continue
+        const g = Math.max(0, (step - w0) / stepsPer - 0.5)
+        for (const l of lanes) {
+          const own = laneStem[l]!
+          const { x, y } = at(g, l)
+          const cp = colourPlace(x, y, Math.floor(g), l, own)
+          const stem = p.accentColour === 'next' ? ORDER[(ORDER.indexOf(cp.stem) + 1) % ORDER.length] : cp.stem
+          let row: number, t: number
+          if (p.accentColour === 'ink') { row = ROW_INK; t = 1 } else if (!pal) {
+            const [r0, t0] = paint('event', 0.9, stem, cp.sec, false)
+            row = r0
+            t = palette === 'across' ? t0 : offsetT(t0, stem)
+          } else {
+            const out = pal.paint({ kind: 'event', lv: 0.9, stem, sec: cp.sec, red: false, g: cp.g, l: cp.l, T, N, u: cp.u, v: cp.v, within: 0.5, offset: p.offset })
+            row = paletteRow(explore, out.row)
+            t = offsetT(clamp01(out.t), stem)
+          }
+          pic.accents.push({ x, y, w: 2 * r, h: 2 * r, radius: r, t0: t, t1: t, row, alpha: 1, feather: 0.5, stem: ORDER.indexOf(stem) })
+        }
+      }
     }
   }
   // A faint ruled grid under the dots, `rulingDiv` lines per dot pitch, through the dot centres.
@@ -610,6 +714,8 @@ function fieldsOf(
     at: (g: number, l: number) => { x: number; y: number }
     events: Ev[]; loud: Record<Stem, Float32Array>; strength: (v: number) => number
     laneStem: (Stem | null)[]; start: Record<Stem, number>; count: Record<Stem, number>
+    /** Time runs across (the blobs lie along x). */
+    across: boolean
   },
 ): Picture {
   const pic = empty()
@@ -649,8 +755,9 @@ function fieldsOf(
     const { x, y } = yAt((c.g0 + c.g1) / 2, c.l)
     // Wide and opaque by strength (and a little by how many notes it gathers); tall as it lasts, plus a soft pad.
     const wide = (0.45 + 0.55 * c.e) * (1 + 0.15 * Math.log2(c.n)) * (0.5 + 0.5 * c.w)
+    const acrossR = 0.5 * (g.across ? g.pY : g.pX) * p.size * wide, alongR = 0.5 * (g.across ? g.pX : g.pY) * (span + 0.8 * p.size)
     pic.dots.push({
-      x, y, rx: 0.5 * g.pX * p.size * wide, ry: 0.5 * g.pY * (span + 0.8 * p.size),
+      x, y, rx: g.across ? alongR : acrossR, ry: g.across ? acrossR : alongR,
       softness: p.softness, wobble: p.wobble, seed: mod(c.l * 0.618 + c.g0 * 0.137, 1), form,
       color: core(c.stem), color2: tint(c.stem), gradient: BLOB_GRADIENTS.radial,
       alpha: p.opacity * c.w * (0.7 + 0.3 * c.e), grain: p.fieldGrain,
@@ -669,7 +776,7 @@ function fieldsOf(
         if (v < 0.02) continue
         const { x, y } = yAt(t + chunk / 2, l0 + (k - 1) / 2)
         pic.streaks.push({
-          x, y, rx: 0.6 * k * g.pX, ry: 0.9 * chunk * g.pY, softness: 1, form: BLOB_FORMS.orb,
+          x, y, rx: g.across ? 0.9 * chunk * g.pX : 0.6 * k * g.pX, ry: g.across ? 0.6 * k * g.pY : 0.9 * chunk * g.pY, softness: 1, form: BLOB_FORMS.orb,
           color: tint(stem), alpha: p.wash * v * (stem === 'drums' ? p.hats + 0.3 : 1),
         })
       }
@@ -743,6 +850,43 @@ function drawPlaced(
   }
 }
 
+/**
+ * The haze as a layer per sound: each part's marks blurred on their own (so one sound's haze never muddies
+ * another's), at that part's amount (Layers) x the layer opacity, laid on normally or multiplied in. The near
+ * haze stays one layer.
+ */
+function hazeBySound(
+  layers: FrameContext['layers'], out: Parameters<typeof drawHaze>[1], p: Record<string, any>, ink: FrameContext['ink'],
+  all: Record<string, any>, lop: number, multiply: boolean,
+) {
+  // The near haze as ever; the far one comes apart, per sound, below.
+  drawHaze(layers, out, p, ink)
+  layers.barsFar.bars.count = 0
+  layers.barsMid.opacity.value *= lop
+  const from = { hair: HAIR, medium: MEDIUM, heavy: HEAVY, solid: SOLID }[p.hazeFrom as string] ?? HAIR
+  const tint = p.hazeTint as string
+  const tone = clamp01(p.hazeTone)
+  ORDER.forEach((stem, si) => {
+    const layer = layers.hazeByStem[si]
+    const amount = Math.min(1, Math.max(0, all[stem] ?? 1))
+    if (amount <= 0.001) return
+    layer.radius = p.hazeBlur
+    layer.stretch = p.hazeStretch
+    layer.gain.value = p.hazeGain
+    layer.opacity.value = p.hazeOpacity * amount * lop
+    layer.edge.value = clamp01(p.hazeEdge)
+    layer.blend = multiply ? 'multiply' : 'normal'
+    layer.bars.blend = 'normal'
+    barcodeGradients(layer.bars, ink)
+    out.marks.forEach((m, i) => {
+      if (out.stems[i] !== si || out.weights[i] < from) return
+      if (tint === 'marks') return layer.bars.push({ ...m, grain: 0 })
+      const hue = tint === 'sections' ? SECTION_HUES[out.section(i) % SECTION_HUES.length] : STEM_HUE[stem]
+      layer.bars.push({ ...m, row: rowOf(hue), t0: tone, t1: tone, grain: 0 })
+    })
+  })
+}
+
 function create(): SubInstance {
   let pic = empty()
   let key = ''
@@ -762,18 +906,20 @@ function create(): SubInstance {
   const placedOut = { marks: [] as BarSpec[], stems: [] as number[], weights: [] as number[], sections: [] as number[], back: [] as BlobSpec[], front: [] as BlobSpec[] }
 
   return {
-    update({ layers, viewport, ink, time, dt, audio }, comp, p) {
+    update({ layers, viewport, ink, time, dt, audio, params: all }, comp, p) {
       const W = viewport.width, H = viewport.height
       const { front, back, bars } = layers
       front.blend = 'normal'
       back.blend = 'normal'
-      bars.blend = 'normal'
+      // Normal, or multiplied into what's under them (overlaps deepen).
+      bars.blend = p.layerBlend === 'multiply' ? 'multiply' : 'normal'
       barcodeGradients(bars, ink)
       bars.setGradient([RAMPS.grey[1], RAMPS.grey[2]], ROW_RULE)
       // The explorations' rows, on the haze layers too (they blur the same marks).
-      for (const layer of [bars, layers.barsFar.bars, layers.barsMid.bars])
+      for (const layer of [bars, layers.barsFar.bars, layers.barsMid.bars, ...layers.hazeByStem.map((h) => h.bars)])
         PALETTES.forEach((pl, i) => pl.rows.forEach((hexes, r) => layer.setGradient(hexes, paletteRow(i, r))))
       layers.grain.value = p.paper
+      layers.softGrain.value = ((p.softGrain ?? 0) / 100) * 0.7
       // Manual: marks placed by hand, over the picture or (canvas blank) alone.
       const placed = decodePlaced(p.marks)
       const blank = p.canvas === 'blank'
@@ -867,10 +1013,24 @@ function create(): SubInstance {
         }
         marks = hazeOf.marks
       }
-      if (p.hazeBlur > 0) drawHaze(layers, hazeOf, p, ink)
-      const crisp = clamp01(p.crisp)
+      const lop = clamp01(p.layerOpacity ?? 1)
+      const multiply = p.layerBlend === 'multiply'
+      if (p.hazeBlur > 0) {
+        if (p.hazeLayers === 'sound') hazeBySound(layers, hazeOf, p, ink, all, lop, multiply)
+        else {
+          drawHaze(layers, hazeOf, p, ink)
+          if (lop < 1) {
+            layers.barsFar.opacity.value *= lop
+            layers.barsMid.opacity.value *= lop
+          }
+          layers.barsFar.blend = multiply ? 'multiply' : 'normal'
+        }
+      }
+      const crisp = clamp01(p.crisp) * lop
       // (By size, not radius: square dots have none.)
       if (crisp > 0.001) for (const m of marks) if ((m.alpha ?? 1) > 0.003 && Math.min(m.w, m.h) > 0.1) bars.push(crisp < 1 ? { ...m, alpha: (m.alpha ?? 1) * crisp } : m)
+      // Accent dots over everything.
+      if (!blank) for (const a of pic.accents) bars.push(a)
     },
   }
 }
@@ -896,6 +1056,14 @@ export const dots: SubMode = {
     ...Object.fromEntries(PALETTES.map((pl) => [`Palette · ${pl.label}`, { params: { ...DEFAULT, palette: pl.id }, ...PAPER }])),
     // The motion explorations, on the default (play the track to see them move).
     ...Object.fromEntries(MOTIONS.map((m) => [`Motion · ${m.label}`, { params: { ...DEFAULT, motion: m.id }, ...PAPER }])),
+    // One line, as Stacked line lays out: time across, the parts stacked in a thin band, a few accent dots per bar.
+    'Single line': {
+      params: {
+        ...DEFAULT, flow: 'across', parts: 'row', systems: 1, perRow: 0, square: true, stretch: 1, margin: 0.06,
+        rows: 12, accents: 2, hazeBlur: 30, hazeStretch: 3, hazeGain: 4, hazeEdge: 0.5, hazeMid: 0.3, crisp: 0.3,
+      },
+      ...PAPER,
+    },
     // Close up: the loudest 4 bars, fewer, bigger dots.
     'Close-up': { params: { anchor: 'loudest', span: 4, rows: 32, lanes: 28, dotEvent: 0.46, streakWidth: 1.2 }, ...PAPER },
     // The whole song in three columns of dots.

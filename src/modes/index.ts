@@ -1,19 +1,11 @@
-import { field } from './field'
-import { gap } from './gap'
-import { haze } from './haze'
-import { orchestra } from './orchestra'
-import { pulse } from './pulse'
 import { sequencer } from './sequencer'
-import { stencil } from './stencil'
-import { stretch } from './stretch'
-import { typeDots, typeToDots } from './typeDots'
-import { typeMorph } from './typeMorph'
-import { typeBuild } from './typeBuild'
-import { typeBloom } from './typeBloom'
+import { stackedLine } from './stackedLine'
 import type { ModeDefinition } from './types'
 
-export const modes: ModeDefinition[] = [orchestra, haze, field, pulse, stretch, gap, sequencer, typeDots, typeToDots, typeMorph, typeBuild, typeBloom, stencil]
+// The modes on offer: the Sequencer (Dots) and Stacked line (Soft Grid's soft blob lines). The other modes (Orchestra, Haze,
+// Field, Pulse, Stretch, Gap, the type modes, Stencil) are on the full-app branch.
+export const modes: ModeDefinition[] = [sequencer, stackedLine]
 
 export function getMode(id: string): ModeDefinition {
-  return modes.find((m) => m.id === id) ?? orchestra
+  return modes.find((m) => m.id === id) ?? sequencer
 }

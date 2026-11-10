@@ -109,17 +109,20 @@ export function buildPresetsCard(
   remove: (ref: PresetRef) => void,
   active: () => string,
 ): PresetsCard {
-  const FILTER_KEY = 'lyria-type:preset-filter'
-  let filter = 'all'
+  // One tab per mode: its presets, then yours for it.
+  const FILTER_KEY = 'lyria-type:preset-tab'
+  const tabLabel = (id: string) => (id === 'sequencer' ? 'Dots' : getMode(id).label)
+  let filter = state.modeId
   try {
-    filter = localStorage.getItem(FILTER_KEY) ?? 'all'
+    const saved = localStorage.getItem(FILTER_KEY)
+    if (saved && modes.some((m) => m.id === saved)) filter = saved
   } catch {}
 
   const head = document.createElement('div')
   head.className = 'presets-head'
   const chips = document.createElement('div')
   chips.className = 'presets-filter'
-  for (const [id, label] of [['all', 'All'], ['mode', 'This mode'], ['yours', 'Yours']]) {
+  for (const [id, label] of modes.map((m) => [m.id, tabLabel(m.id)])) {
     const b = document.createElement('button')
     b.textContent = label
     b.dataset.filter = id
@@ -142,15 +145,16 @@ export function buildPresetsCard(
   page.append(head, list)
 
   /** `keep`: stay scrolled where the list is (a star); otherwise bring the picked preset into view. */
+  let lastMode = state.modeId
   function render(keep = false) {
     const top = page.scrollTop
     for (const b of chips.querySelectorAll<HTMLButtonElement>('button')) b.classList.toggle('on', b.dataset.filter === filter)
-    const refs = allPresets().filter((r) => (filter === 'yours' ? r.group === 'Yours' : filter === 'mode' ? r.mode === state.modeId : true))
+    const refs = allPresets().filter((r) => r.mode === filter)
     list.replaceChildren()
     if (!refs.length) {
       const empty = document.createElement('p')
       empty.className = 'hint'
-      empty.textContent = filter === 'yours' ? 'Nothing here yet. Star a preset, or set up a look and “Save current look”.' : 'No presets here.'
+      empty.textContent = 'No presets here yet. Set up a look in this mode and “Save current look”.'
       list.appendChild(empty)
       return
     }
@@ -161,7 +165,7 @@ export function buildPresetsCard(
       if (ref.group !== group) {
         group = ref.group
         const h = document.createElement('h4')
-        h.textContent = group === 'Yours' ? 'Yours' : group
+        h.textContent = group === 'Yours' ? 'Yours' : 'Presets'
         grid = document.createElement('div')
         grid.className = 'presets-grid'
         list.append(h, grid)
@@ -218,7 +222,14 @@ export function buildPresetsCard(
     else list.querySelector<HTMLElement>('.preset-tile.on')?.scrollIntoView({ block: 'nearest' })
   }
   render()
-  return { refresh: () => render() }
+  return {
+    refresh: () => {
+      // Follow the mode when it changes elsewhere.
+      if (filter !== state.modeId && modes.some((m) => m.id === state.modeId) && lastMode !== state.modeId) filter = state.modeId
+      lastMode = state.modeId
+      render()
+    },
+  }
 }
 
 /**

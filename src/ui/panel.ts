@@ -2,40 +2,29 @@ import { Pane, type FolderApi } from 'tweakpane'
 import { defaults, type ParamSchema } from '../app/params'
 import { emit, on, state } from '../app/state'
 import type { AudioEngine } from '../audio/audioEngine'
-import { layouts, getLayout } from '../layout'
 import { modes, getMode } from '../modes'
-import { addFontFile, addGoogleFont, addLocalFont, listFonts } from '../text/fonts/registry'
-import { downloadScene, loadSceneFile } from '../app/scene'
+import { loadSceneFile } from '../app/scene'
 import type { Engine } from '../engine/engine'
 import { EXPORT_OPTIONS, runExport, type ExportKind } from '../export/export'
 import { playhead, trackFor } from '../app/keyframes'
 import { mountColourPlace, mountGradientTools } from './gradientTools'
 import { attachView } from './view'
 import { buildToolbar } from './toolbar'
-import { clearSession, pauseAutosave } from '../app/session'
-import { addDrop, clearDrops, imageColours } from '../app/drops'
+import { addDrop, imageColours } from '../app/drops'
 import { applySaved, deletePreset, getSaved, savePreset, savedNames as savedNamesOf, setThumb, syncPresets } from '../app/userPresets'
 import { buildPresetsCard, builtIns, captureThumb, thumbMaker, type PresetRef } from './presetsCard'
 import { attachTips } from './tips'
 import { buildStemMeters } from './stemColours'
-import { buildRack } from './rack'
-import { buildCompose } from './compose'
 import { buildMasksCard } from './masksCard'
 import type { ModeDefinition, ModePreset } from '../modes/types'
 
-// The panel: cards floating over the stage, each a pill that opens into its
-// own window. Text, Scene, Instruments, Compose and Masks on the left; Export, Mode, Presets
-// and Audio stacked on the right, where an open card pushes the ones below it
-// down. Mode opens on load; Esc closes them all.
-// Each card holds Tweakpanes; mode and layout controls are generated from
-// their param schemas.
+// The panel: a sidebar beside the stage, its sections as small tabs along
+// the top (Mode, Presets, Masks, Audio, Export); one shows at a time. Each
+// holds Tweakpanes; the mode's controls are generated from its param schema.
 
-const LEFT = ['Text', 'Scene', 'Instruments', 'Compose', 'Masks'] as const
-const RIGHT = ['Export', 'Mode', 'Presets', 'Audio'] as const
-const TABS = [...LEFT, ...RIGHT]
+const TABS = ['Mode', 'Presets', 'Masks', 'Audio', 'Export'] as const
 type Tab = (typeof TABS)[number]
-const OPEN_KEY = 'lyria-type:open-cards'
-const CHEVRON = '<svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5l3 3 3-3"/></svg>'
+const OPEN_KEY = 'lyria-type:tab'
 
 export interface PanelApi {
   /** Open a card. */
@@ -54,43 +43,41 @@ export function buildPanel(root: HTMLElement, audio: AudioEngine, engine: Engine
   // Params changed outside the panel (the rack's dials).
   on('params', refreshAll)
 
-  // --- Cards -----------------------------------------------------------------
+  // --- Tabs ------------------------------------------------------------------
   const pages = new Map<Tab, HTMLElement>()
-  const cards = new Map<Tab, HTMLElement>()
-  for (const [side, tabs] of [['left', LEFT], ['right', RIGHT]] as const) {
-    const dock = document.createElement('div')
-    dock.className = `dock dock-${side}`
-    root.appendChild(dock)
-    for (const tab of tabs) {
-      const card = document.createElement('section')
-      card.className = `card card-${tab.toLowerCase()}`
-      const pill = document.createElement('button')
-      pill.className = 'pill'
-      pill.innerHTML = `<span class="pill-label">${tab}</span>${CHEVRON}`
-      pill.addEventListener('click', () => setOpen(tab, !card.classList.contains('open')))
-      const page = document.createElement('div')
-      page.className = 'tab-page'
-      page.hidden = true
-      card.append(pill, page)
-      dock.appendChild(card)
-      pages.set(tab, page)
-      cards.set(tab, card)
-    }
+  const tabButtons = new Map<Tab, HTMLButtonElement>()
+  const tabBar = document.createElement('nav')
+  tabBar.className = 'side-tabs'
+  tabBar.setAttribute('role', 'tablist')
+  const body = document.createElement('div')
+  body.className = 'side-body'
+  root.append(tabBar, body)
+  for (const tab of TABS) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.textContent = tab
+    b.setAttribute('role', 'tab')
+    b.addEventListener('click', () => setOpen(tab, true))
+    tabBar.appendChild(b)
+    tabButtons.set(tab, b)
+    const page = document.createElement('div')
+    page.className = 'tab-page'
+    page.hidden = true
+    body.appendChild(page)
+    pages.set(tab, page)
   }
   function setOpen(tab: Tab, open: boolean) {
-    cards.get(tab)!.classList.toggle('open', open)
-    pages.get(tab)!.hidden = !open
+    if (!open) return
+    for (const t of TABS) {
+      pages.get(t)!.hidden = t !== tab
+      tabButtons.get(t)!.setAttribute('aria-selected', String(t === tab))
+    }
     try {
-      localStorage.setItem(OPEN_KEY, JSON.stringify(TABS.filter((t) => cards.get(t)!.classList.contains('open'))))
+      localStorage.setItem(OPEN_KEY, tab)
     } catch {}
   }
   attachTips(root)
-  // Esc closes every open card (unless typing, or a pick menu is open).
-  window.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement)?.tagName ?? '')) return
-    for (const t of TABS) if (cards.get(t)!.classList.contains('open')) setOpen(t, false)
-  })
-  /** The Mode card, at a group: opened (with any group it sits in), scrolled to and flashed. */
+  /** The Mode tab, at a group: opened (with any group it sits in), scrolled to and flashed. */
   function goTo(...prefixes: string[]) {
     setOpen('Mode', true)
     const titles = [...pages.get('Mode')!.querySelectorAll<HTMLElement>('.tp-fldv_t')]
@@ -112,134 +99,16 @@ export function buildPanel(root: HTMLElement, audio: AudioEngine, engine: Engine
     return pane
   }
 
-  // --- Text ------------------------------------------------------------------
-  const textarea = document.createElement('textarea')
-  textarea.className = 'copy'
-  textarea.spellcheck = false
-  textarea.value = state.text
-  textarea.addEventListener('input', () => {
-    state.text = textarea.value
-    emit('text')
-  })
-  pages.get('Text')!.appendChild(textarea)
-
-  // Type test: types prompts after the text, a letter at a time like a person (with the odd pause),
-  // holds, deletes them, and moves on, so the typing look can be watched without typing. Stopping
-  // puts the text back as it was; nothing is saved while it runs.
-  const TEST_PROMPTS = [
-    'a warm bossa groove with brushed drums',
-    'deep round bass and soft rhodes chords drifting over a slow summer evening',
-    'glitchy hats',
-    'big cinematic strings rising into a bright choir',
-    'lofi piano, vinyl crackle, rain on the window',
-    'four on the floor kick with a rolling acid bassline that never stops moving',
-  ]
-  const testBtn = document.createElement('button')
-  testBtn.className = 'type-test'
-  testBtn.textContent = 'Type test'
-  testBtn.title = 'Type prompts after the text, then delete them, over and over, to watch the typing look'
-  pages.get('Text')!.appendChild(testBtn)
-  let testRun = 0
-  let testOriginal = ''
-  const setText = (t: string) => {
-    state.text = t
-    textarea.value = t
-    emit('text')
-  }
-  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
-  const stopTest = () => {
-    testRun++
-    testBtn.textContent = 'Type test'
-    testBtn.classList.remove('on')
-    setText(testOriginal)
-    pauseAutosave(false)
-  }
-  testBtn.addEventListener('click', async () => {
-    if (testBtn.classList.contains('on')) return stopTest()
-    const run = ++testRun
-    testOriginal = state.text
-    pauseAutosave(true)
-    testBtn.textContent = 'Stop type test'
-    testBtn.classList.add('on')
-    const alive = () => run === testRun
-    for (let k = 0; alive(); k++) {
-      const prompt = TEST_PROMPTS[k % TEST_PROMPTS.length]
-      const start = testOriginal.replace(/\s+$/, '') + '\n'
-      for (let i = 1; i <= prompt.length && alive(); i++) {
-        setText(start + prompt.slice(0, i))
-        const ch = prompt[i - 1]
-        // Quick within words, a beat longer after a space or comma, now and then a hesitation.
-        await wait(55 + Math.random() * 70 + (ch === ' ' ? 90 : ch === ',' ? 220 : 0) + (Math.random() < 0.06 ? 350 : 0))
-      }
-      await wait(1600)
-      for (let i = prompt.length - 1; i >= 0 && alive(); i--) {
-        setText(start + prompt.slice(0, i))
-        await wait(22 + Math.random() * 18)
-      }
-      if (alive()) setText(testOriginal)
-      await wait(700)
-    }
-  })
-
-  const textPane = paneIn('Text')
-  const fType = textPane.addFolder({ title: 'Type' })
-  let fontBinding = addFontBinding()
-  function addFontBinding() {
-    const options = Object.fromEntries(listFonts().map((font) => [font.label, font.id]))
-    return fType.addBinding(state, 'fontId', { label: 'font', options, index: 0 }).on('change', () => emit('text'))
-  }
-  on('fonts', () => {
-    fontBinding.dispose()
-    fontBinding = addFontBinding()
-  })
-  fType.addBinding(state, 'fontSize', { label: 'size', min: 8, max: 300, step: 1 }).on('change', () => emit('text'))
-  fType.addBinding(state, 'tracking', { min: -0.2, max: 1, step: 0.005 }).on('change', () => emit('text'))
-  fType.addBinding(state, 'wrap', { label: 'wrap width (0 = off)', min: 0, max: 1, step: 0.01 }).on('change', () => emit('text'))
-
-  const fColour = textPane.addFolder({ title: 'Colour' })
-  fColour.addBinding(state, 'ink')
-  fColour.addBinding(state, 'background')
-
-  const fFonts = textPane.addFolder({ title: 'Add fonts', expanded: false })
-  const fontInput = hiddenInput('.ttf,.otf,.woff,.woff2', (file) => addFont(() => addFontFile(file)))
-  fFonts.addButton({ title: 'Add font file…' }).on('click', () => fontInput.click())
-  const fontQuery = { name: '' }
-  fFonts.addBinding(fontQuery, 'name', { label: 'font name' })
-  fFonts.addButton({ title: 'Add Google Font' }).on('click', () => addFont(() => addGoogleFont(fontQuery.name)))
-  fFonts.addButton({ title: 'Add installed font' }).on('click', () => addFont(() => addLocalFont(fontQuery.name)))
-
-  async function addFont(load: () => Promise<{ id: string }>) {
-    try {
-      const font = await load()
-      state.fontId = font.id
-      emit('fonts')
-      emit('text')
-    } catch (err) {
-      alert((err as Error).message)
-    }
-  }
-
-  // --- Layout (in the Text tab) -----------------------------------------------
-  const layoutPane = textPane.addFolder({ title: 'Layout' })
-  layoutPane
-    .addBinding(state, 'layoutId', { label: 'layout', options: Object.fromEntries(layouts.map((l) => [l.label, l.id])) })
-    .on('change', () => renderLayoutParams())
-  let layoutParams: FolderApi | null = null
-  function renderLayoutParams() {
-    layoutParams?.dispose()
-    const def = getLayout(state.layoutId)
-    layoutParams = layoutPane.addFolder({ title: def.label })
-    // (The Text tab shows the block's alignment too: keep it in step.)
-    addSchema(layoutParams, def.params, state.layoutParams[def.id], () => refreshAll(), `layout:${def.id}`)
-  }
-  renderLayoutParams()
-
   // --- Mode ------------------------------------------------------------------
   const modePane = paneIn('Mode')
   modePane
     .addBinding(state, 'modeId', { label: 'mode', options: Object.fromEntries(modes.map((m) => [m.label, m.id])) })
     // A scene load or a preset updates the dropdown too; only a user's pick applies the first preset.
     .on('change', () => renderModeParams(!loadingScene && !applying))
+  // The page: its colour, and the ink some looks draw in.
+  const fPage = modePane.addFolder({ title: 'Page', expanded: false })
+  fPage.addBinding(state, 'background', { label: 'background' })
+  fPage.addBinding(state, 'ink', { label: 'ink' })
   // The mode's own settings: their own pane, redrawn when the mode or sub-mode changes.
   const modeHost = document.createElement('div')
   pages.get('Mode')!.appendChild(modeHost)
@@ -307,6 +176,8 @@ export function buildPanel(root: HTMLElement, audio: AudioEngine, engine: Engine
     const values = state.modeParams[def.id]
     // Sub-mode pickers sit first when the presets depend on them.
     const pickers = def.presetsFor ? (def.rebuildOn ?? []) : []
+    // A picker with one choice (the Sequencer's style, now only Dots) isn't shown.
+    const shownPickers = pickers.filter((k) => Object.keys((def.params[k] as { options?: object }).options ?? { a: 1, b: 2 }).length > 1)
     // Some keys (a sub-mode picker) change which controls exist: re-render on
     // change. A user's pick of a sub-mode starts from its first preset.
     const onChange = (key: string) => {
@@ -314,7 +185,7 @@ export function buildPanel(root: HTMLElement, audio: AudioEngine, engine: Engine
       const fresh = pickers.includes(key) && !applying && !loadingScene
       queueMicrotask(() => renderModeParams(fresh))
     }
-    addSchema(folder, Object.fromEntries(pickers.map((k) => [k, def.params[k]])), values, onChange)
+    addSchema(folder, Object.fromEntries(shownPickers.map((k) => [k, def.params[k]])), values, onChange)
     // Switching mode (or sub-mode) starts from its first preset, colours and font included.
     if (applyFirstPreset) {
       const presets = def.presetsFor?.(values) ?? def.presets ?? {}
@@ -331,8 +202,18 @@ export function buildPanel(root: HTMLElement, audio: AudioEngine, engine: Engine
     }
     const groups = def.groupsFor?.(values) ?? def.groups
     if (groups) {
+      // Folded as last left; on a fresh load only the mode's main sections are open.
+      const folds = foldState()
       for (const [title, keys] of Object.entries(groups)) {
-        const sub = folder.addFolder({ title })
+        const fk = `${def.id}:${title}`
+        const sub = folder.addFolder({ title, expanded: folds[fk] ?? (!def.openGroups || def.openGroups.includes(title)) })
+        sub.on('fold', (ev) => {
+          const f = foldState()
+          f[fk] = ev.expanded
+          try {
+            localStorage.setItem(FOLD_KEY, JSON.stringify(f))
+          } catch {}
+        })
         addSchema(sub, Object.fromEntries(keys.filter((k) => !pickers.includes(k)).map((k) => [k, def.params[k]])), values, onChange, `${def.id}:${title}`)
         // The Sequencer's gradient: a stops editor, and handles / a mask brush on the stage.
         if (title === 'Gradient map' && 'gradStops' in def.params) mountGradientTools(sub, values, engine, () => refreshAll())
@@ -424,26 +305,8 @@ export function buildPanel(root: HTMLElement, audio: AudioEngine, engine: Engine
   attachView(engine, () => {})
   // The toolbar along the bottom of the stage (view, gradient, keyframes, PNG).
   buildToolbar(engine, () => {}, { open: (tab) => setOpen(tab as Tab, true), goTo, png: () => quickPng() })
-  // The instruments: their rack in its own card (every mode).
-  buildRack(pages.get('Instruments')!, () => !pages.get('Instruments')!.hidden)
-  // Compose: placing Dots' elements by hand (the Sequencer's Manual style), edited on the stage while open.
-  buildCompose(pages.get('Compose')!, engine, {
-    open: () => !pages.get('Compose')!.hidden,
-    startManual: () => usePreset({ key: 'sequencer-manual-blank', mode: 'sequencer', sub: 'manual', name: 'Blank', saved: false, group: '' }),
-  })
   // Masks: invisible shapes pushing the Sequencer's marks aside (any style), edited on the stage while open.
   buildMasksCard(pages.get('Masks')!, engine, () => !pages.get('Masks')!.hidden)
-
-  // Images dropped on the stage (every mode): where their colours go and how they arrive (engine/dropFx.ts).
-  const dropPane = paneIn('Scene')
-  const dropFolder = dropPane.addFolder({ title: 'Image drop', expanded: false })
-  dropFolder.addBinding(state.drop, 'target', { label: 'colours go to', options: { 'The moving gradient (haze, trails)': 'gradient', 'The dots': 'dots', Both: 'both' } })
-  dropFolder.addBinding(state.drop, 'style', { label: 'arrives as', options: { Ripple: 'ripple', 'Warp (pulled in)': 'warp' } })
-  dropFolder.addBinding(state.drop, 'warp', { label: 'warp strength', min: 0, max: 2, step: 0.01 })
-  dropFolder.addBinding(state.drop, 'speed', { label: 'wipe speed (px/s)', min: 60, max: 3000, step: 10 })
-  dropFolder.addBinding(state.drop, 'hold', { label: 'colours hold (s)', min: 0, max: 30, step: 0.1 })
-  dropFolder.addBinding(state.drop, 'fade', { label: 'fade back (s)', min: 0.1, max: 20, step: 0.1 })
-  dropFolder.addButton({ title: 'Clear dropped images' }).on('click', () => clearDrops())
 
   // --- Audio -----------------------------------------------------------------
   const audioPane = paneIn('Audio')
@@ -473,22 +336,6 @@ export function buildPanel(root: HTMLElement, audio: AudioEngine, engine: Engine
     .on('change', ({ value }) => (audio.analyser.sensitivity = value))
   // The level, and each stem in the colour it's drawn in on the stage.
   buildStemMeters(pages.get('Audio')!, audio, engine, () => !pages.get('Audio')!.hidden)
-
-  // --- Scene -------------------------------------------------------------------
-  const scenePane = paneIn('Scene')
-  const sceneInput = hiddenInput('.json,application/json', (file) => loadScene(file))
-  scenePane.addButton({ title: 'Save scene (.json)' }).on('click', () => downloadScene())
-  scenePane.addButton({ title: 'Load scene…' }).on('click', () => sceneInput.click())
-  scenePane.addButton({ title: 'Start again from the defaults' }).on('click', () => {
-    if (confirm('Start again from the default look? Your saved presets are kept.')) clearSession()
-  })
-  const hint = document.createElement('p')
-  hint.className = 'hint'
-  hint.textContent =
-    'Your work saves as you go. Save scene keeps a copy as a file you can load later or share; drop one anywhere on the page to load it.'
-  pages.get('Scene')!.appendChild(hint)
-  // (The image drop settings sit after this.)
-  pages.get('Scene')!.appendChild(dropPane.element)
 
   async function loadScene(file: File) {
     try {
@@ -551,15 +398,12 @@ export function buildPanel(root: HTMLElement, audio: AudioEngine, engine: Engine
   // After a scene loads, every control needs to show the new values.
   on('scene', () => {
     loadingScene = true
-    textarea.value = state.text
-    renderLayoutParams()
     renderModeParams()
     refreshAll()
     loadingScene = false
   })
 
-  // Drag & drop anywhere: fonts become fonts, audio becomes the source,
-  // scene files load.
+  // Drag & drop anywhere: audio becomes the source, scene files load, images ripple their colours in.
   window.addEventListener('dragover', (e) => e.preventDefault())
   // An image dropped on the stage: its colours ripple out from where it landed in the dot modes.
   async function dropImage(file: File, e: DragEvent) {
@@ -591,7 +435,6 @@ export function buildPanel(root: HTMLElement, audio: AudioEngine, engine: Engine
     for (const file of files) {
       if (file.type.startsWith('image/')) await dropImage(file, e)
       else if (/\.json$/i.test(file.name)) await loadScene(file)
-      else if (/\.(ttf|otf|woff2?)$/i.test(file.name)) await addFont(() => addFontFile(file))
       else if (file.type.startsWith('audio/') && audioFiles.length === 1) {
         await audio.useFile(file)
         state.audio.source = 'file'
@@ -600,13 +443,24 @@ export function buildPanel(root: HTMLElement, audio: AudioEngine, engine: Engine
     }
   })
 
-  // Cards open as last left, and Mode always.
+  // The tab last open (Mode the first time).
+  let first: Tab = 'Mode'
   try {
-    const open = JSON.parse(localStorage.getItem(OPEN_KEY) ?? '[]') as string[]
-    for (const t of TABS) if (open.includes(t)) setOpen(t, true)
+    const t = localStorage.getItem(OPEN_KEY) as Tab | null
+    if (t && TABS.includes(t)) first = t
   } catch {}
-  setOpen('Mode', true)
+  setOpen(first, true)
   return { open: (card) => setOpen(card as Tab, true), goTo }
+}
+
+const FOLD_KEY = 'lyria-type:folds'
+/** Which mode sections were left open or folded (by `mode:title`). */
+function foldState(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(FOLD_KEY) ?? '{}')
+  } catch {
+    return {}
+  }
 }
 
 const keySlug = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
