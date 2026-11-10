@@ -120,6 +120,11 @@ const params = {
   perRow: { type: 'number', value: 0, min: 0, max: 6, step: 1, label: 'columns per row (0 = one row)' },
   // Every part on one row (one line of elements, as Stacked line's), their layers over each other.
   parts: { type: 'select', value: 'lanes', label: 'parts', options: { 'each in its own lanes': 'lanes', 'all on one row': 'row' } },
+  // On one row: every part's own shapes over each other (a little apart), or only the one that leads each step.
+  rowShow: { type: 'select', value: 'each', label: 'on the row', options: { 'every part': 'each', 'the leading part': 'leader' }, showIf: { key: 'parts', is: 'row' } },
+  partSpread: { type: 'number', value: 0.3, min: 0, max: 2, step: 0.01, label: 'parts spread', showIf: { key: 'parts', is: 'row' } },
+  // Each part its own scale (bass full, instruments a little over, vocals lighter, drums small), so they read apart.
+  character: { type: 'number', value: 0, min: 0, max: 1, step: 0.01, label: 'part character' },
   rowGap: { type: 'number', value: 2, min: 0, max: 16, step: 0.25, label: 'space between rows' },
   stretch: { type: 'number', value: 1, min: 0.25, max: 4, step: 0.05, label: 'spacing along time' },
 
@@ -197,11 +202,11 @@ const params = {
 } as const
 
 const groups: Record<string, string[]> = {
-  Layout: ['style', 'flow', 'parts', 'systems', 'perRow', 'rows', 'lanes', 'margin', 'gap', 'rowGap', 'stretch', 'square', 'groupGap'],
+  Layout: ['style', 'flow', 'parts', 'rowShow', 'partSpread', 'systems', 'perRow', 'rows', 'lanes', 'margin', 'gap', 'rowGap', 'stretch', 'square', 'groupGap'],
   Colour: ['palette', 'offset', 'accent', 'colRepeat', 'colX0', 'colY0', 'colX1', 'colY1'],
   Layers: ['hazeLayers', 'layerBlend', 'layerOpacity'],
   // `crisp`: the matrix dots themselves (0 = only their haze and streaks show, and the accent dots).
-  Dots: ['crisp', 'ghost', 'dotMin', 'dotBase', 'dotEvent', 'soft', 'streak', 'streakWidth', 'ruling', 'rulingDiv'],
+  Dots: ['crisp', 'character', 'ghost', 'dotMin', 'dotBase', 'dotEvent', 'soft', 'streak', 'streakWidth', 'ruling', 'rulingDiv'],
   'Accent dots': ['accents', 'accentSize', 'accentOn', 'accentColour'],
   Haze: hazeKeys.filter((k) => k !== 'crisp'),
   Grain: ['paper', 'softGrain'],
@@ -474,6 +479,14 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
   const oneRow = p.parts === 'row'
   const NL = oneRow ? 1 : N
   const lane = (l: number) => (oneRow ? 0 : l)
+  // Every part on the row: each a little off the line by its place among the parts (lowest at the bottom).
+  const eachOnRow = oneRow && p.rowShow !== 'leader'
+  const partsHere = Object.keys(start) as Stem[]
+  const partOff = (l: number) => {
+    if (!eachOnRow || !laneStem[l]) return 0
+    const i = partsHere.indexOf(laneStem[l]!)
+    return (i - (partsHere.length - 1) / 2) * (p.partSpread ?? 0.3)
+  }
   const sysW = across ? Rw : NL, sysH = across ? NL : Rw
   const unitsX = cols * sysW + (cols - 1) * p.gap, unitsY = sysRows * sysH + (sysRows - 1) * rowGap
   // `stretch` spaces the dots out along time (x when across, y when down).
@@ -491,8 +504,8 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
     const s = Math.max(0, Math.min(S - 1, Math.floor(g / Rw)))
     const c = s % cols, r = Math.floor(s / cols), gr = g - s * Rw
     return across
-      ? { x: left + (c * (Rw + p.gap) + gr + 0.5) * pX, y: top - (r * (NL + rowGap) + (NL - 1 - lane(l)) + 0.5) * pY }
-      : { x: left + (c * (NL + p.gap) + lane(l) + 0.5) * pX, y: top - (r * (Rw + rowGap) + gr + 0.5) * pY }
+      ? { x: left + (c * (Rw + p.gap) + gr + 0.5) * pX, y: top - (r * (NL + rowGap) + (NL - 1 - lane(l)) + 0.5 - partOff(l)) * pY }
+      : { x: left + (c * (NL + p.gap) + lane(l) + 0.5 + partOff(l)) * pX, y: top - (r * (Rw + rowGap) + gr + 0.5) * pY }
   }
 
   pic.grid = { w0, w1, stepsPer, T, N, Rw, S, pX, pY, W, H }
@@ -567,8 +580,11 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
     const hue: Hue = palette === 'stems' ? STEM_HUE[stem] : palette === 'sections' ? SECTION_HUES[sec % SECTION_HUES.length] : (palette as Hue)
     return [rowOf(hue), kind === 'ghost' ? 0.08 : kind === 'base' ? 0.15 + 0.35 * lv : 0.5 + 0.4 * lv]
   }
+  /** Part character: bass full, instruments a little over, vocals lighter, drums small (at `character` 1). */
+  const CHAR: Record<Stem, number> = { bass: 1.4, instruments: 1.12, vocals: 0.85, drums: 0.62 }
   const dot = (g: number, l: number, r: number, kind: 'ghost' | 'base' | 'event', lv: number, alpha: number, red: boolean, weight: number) => {
     const stem = laneStem[l]!
+    if (p.character > 0 && kind !== 'ghost') r *= lerp(1, CHAR[stem], clamp01(p.character))
     const { x, y } = at(g, l)
     const sec = sectionOfSlot(g)
     // The colour is the palette's for the place the (moved) colours put here.
@@ -600,7 +616,7 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
   // All on one row: per step, only the lane that leads it (a hit before a held sound, the louder before the
   // quieter), so the line's colour follows whichever part leads; a silent step keeps one ghost.
   const leader = new Int32Array(T).fill(-1)
-  if (oneRow) {
+  if (oneRow && !eachOnRow) {
     for (let g = 0; g < T; g++) {
       let bs = 0
       for (let k = 0; k < N; k++) {
@@ -611,7 +627,18 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
       if (leader[g] < 0) leader[g] = laneStem.findIndex((x) => x)
     }
   }
-  const shown = (g: number, l: number) => !oneRow || leader[g] === l
+  /** Every part on the row: per step, each part's strongest lane (the rest would land on it); one ghost if all are silent. */
+  const shown = (g: number, l: number) => {
+    if (!oneRow) return true
+    if (!eachOnRow) return leader[g] === l
+    const s0 = laneStem[l]!
+    const score = (k: number) => (ev[g * N + k] > 0 ? 1 + ev[g * N + k] : base[g * N + k])
+    let best = -1, bs = 0.02
+    for (let k = start[s0]; k < start[s0] + count[s0]; k++) if (score(k) > bs) { bs = score(k); best = k }
+    if (best >= 0) return best === l
+    for (let k = 0; k < N; k++) if (laneStem[k] && score(k) > 0.02) return false
+    return l === laneStem.findIndex((x) => x)
+  }
   for (let g = 0; g < T; g++) {
     for (let l = 0; l < N; l++) {
       if (!laneStem[l] || !shown(g, l)) continue
@@ -1057,10 +1084,18 @@ export const dots: SubMode = {
     // The motion explorations, on the default (play the track to see them move).
     ...Object.fromEntries(MOTIONS.map((m) => [`Motion · ${m.label}`, { params: { ...DEFAULT, motion: m.id }, ...PAPER }])),
     // One line, as Stacked line lays out: time across, the parts stacked in a thin band, a few accent dots per bar.
-    'Single line': {
+    // One row of soft forms, as built by hand (the look named after DUSK): time across, the leading part per step,
+    // long varied dots hidden under their pooled haze (a layer per sound), five small accent dots per bar.
+    'Single line · dusk': {
       params: {
-        ...DEFAULT, flow: 'across', parts: 'row', systems: 1, perRow: 0, square: true, stretch: 1, margin: 0.06,
-        rows: 12, accents: 2, hazeBlur: 30, hazeStretch: 3, hazeGain: 4, hazeEdge: 0.5, hazeMid: 0.3, crisp: 0.3,
+        rows: 45, lanes: 20, systems: 1, margin: 0, groupGap: 1, flow: 'across', parts: 'row', rowShow: 'leader',
+        partSpread: 0, rowGap: 2.75, stretch: 4, accents: 5, accentSize: 0.075, accentColour: 'own',
+        hazeLayers: 'sound', floor: 0.35, gamma: 0.95, laneFloor: 0.05, accent: 0.045, palette: 'across',
+        colX0: -0.8, colY1: 1.2, colRepeat: 'clamp', offset: 1, ghost: 0, dotMin: 0.235, dotBase: 0.05,
+        dotEvent: 0.8, soft: 1, streak: 1, streakWidth: 1.05, ruling: 0, paper: 0, dotSize: 0.72, dotLength: 3.15,
+        randSize: 1, randLength: 1, noiseScale: 1200, noiseSpeed: 0.2, noiseSeed: 5, hazeBlur: 8, hazeStretch: 1.3,
+        hazeMid: 0, hazeGain: 8, hazeOpacity: 1.2, hazeEdge: 0.6, crisp: 0, vocals: 1.26, instruments: 0.8,
+        drums: 1.24, bass: 1.16,
       },
       ...PAPER,
     },

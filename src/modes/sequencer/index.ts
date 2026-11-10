@@ -80,7 +80,8 @@ for (const sub of SUBS) {
       [
         ...Object.entries(sub.presets).map(([name, preset]) => [
           name,
-          { ...preset, params: { style: sub.id, ...Object.fromEntries(Object.entries(preset.params).map(([k, v]) => [key(sub, k), v])) } },
+          // (Settings shared by every style, e.g. each sound's amount, keep their own names.)
+          { ...preset, params: { style: sub.id, ...Object.fromEntries(Object.entries(preset.params).map(([k, v]) => [k in sub.params ? key(sub, k) : k, v])) } },
         ]),
         // Genre starting points: the sub-mode's defaults under the shared finish (finish.ts).
         ...Object.entries(GENRES).map(([name, preset]) => [name, { ...preset, params: { style: sub.id, ...preset.params } }]),
