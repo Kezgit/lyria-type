@@ -97,6 +97,29 @@ const lin = (hex: string): RGB => {
 }
 const mixc = (a: RGB, b: RGB, t: number): RGB => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]
 
+/**
+ * Your colours (Stacked line's colour pickers, one per part): a colour per sound for its dots, haze and
+ * shapes, and one per sound for its accent dots. Each part's colour is a short ramp (pale -> the colour ->
+ * a little deeper) in a bar-layer row of its own, past the palettes' rows.
+ */
+const ROW_OWN = 40
+const ROW_ACC = 44
+const OWN_KEY: Record<Stem, string> = { vocals: 'colVocals', instruments: 'colInstruments', drums: 'colDrums', bass: 'colBass' }
+const ACC_KEY: Record<Stem, string> = { vocals: 'accVocals', instruments: 'accInstruments', drums: 'accDrums', bass: 'accBass' }
+const mixHex = (a: string, b: string, t: number) => {
+  const ch = (h: string, i: number) => parseInt(h.replace('#', '').slice(i, i + 2), 16)
+  return '#' + [0, 2, 4].map((i) => Math.round(lerp(ch(a, i), ch(b, i), t)).toString(16).padStart(2, '0')).join('')
+}
+const ownRamp = (c: string) => [mixHex(c, '#ffffff', 0.75), mixHex(c, '#ffffff', 0.35), c, mixHex(c, '#000000', 0.3)]
+/** Your colours into a bar layer's rows. */
+function setOwnRows(layer: { setGradient(hexes: readonly string[], row?: number): void }, p: Record<string, any>) {
+  ORDER.forEach((st, i) => {
+    layer.setGradient(ownRamp(p[OWN_KEY[st]] ?? '#888888'), ROW_OWN + i)
+    const a = p[ACC_KEY[st]] ?? '#121317'
+    layer.setGradient([a, a], ROW_ACC + i)
+  })
+}
+
 const params = {
   style: { type: 'select', value: 'dots', label: 'draw as', options: { dots: 'dots', fields: 'fields' } },
 
@@ -132,7 +155,11 @@ const params = {
   accents: { type: 'number', value: 0, min: 0, max: 8, step: 1, label: 'accent dots per bar' },
   accentSize: { type: 'number', value: 0.12, min: 0.005, max: 0.5, step: 0.005, label: 'accent size' },
   accentOn: { type: 'select', value: 'parts', label: 'accents on', options: { 'one lane per part': 'parts', 'every lane': 'lanes' } },
-  accentColour: { type: 'select', value: 'next', label: 'accent colour', options: { "the next part's": 'next', "its own part's": 'own', ink: 'ink' } },
+  accentColour: { type: 'select', value: 'next', label: 'accent colour', options: { "the next part's": 'next', "its own part's": 'own', ink: 'ink', 'my colours': 'picked' } },
+  accVocals: { type: 'color', value: '#1d3fc4', label: 'vocals dots', showIf: { key: 'accentColour', is: 'picked' } },
+  accInstruments: { type: 'color', value: '#b5650a', label: 'instruments dots', showIf: { key: 'accentColour', is: 'picked' } },
+  accDrums: { type: 'color', value: '#8f0f30', label: 'drums dots', showIf: { key: 'accentColour', is: 'picked' } },
+  accBass: { type: 'color', value: '#3a2a9e', label: 'bass dots', showIf: { key: 'accentColour', is: 'picked' } },
 
   // Layers: each sound's dots and haze as its own layer (its opacity is its amount under Layers), laid on
   // over the page normally or multiplied in, so where sounds overlap their colours deepen rather than mud.
@@ -159,12 +186,16 @@ const params = {
   palette: {
     type: 'select', value: 'ink', label: 'dot colour',
     options: {
-      ink: 'ink', stems: 'stems', sections: 'sections', 'across hues': 'across',
+      'my colours': 'own', ink: 'ink', stems: 'stems', sections: 'sections', 'across hues': 'across',
       'mono blue': 'blue', 'mono red': 'red', 'mono yellow': 'yellow', 'mono green': 'green',
       ...Object.fromEntries(PALETTES.map((pl) => [pl.label, pl.id])),
       ...LEDGER_OPTIONS,
     },
   },
+  colVocals: { type: 'color', value: '#5a7cff', label: 'vocals', showIf: { key: 'palette', is: 'own' } },
+  colInstruments: { type: 'color', value: '#f2a33a', label: 'instruments', showIf: { key: 'palette', is: 'own' } },
+  colDrums: { type: 'color', value: '#e0335a', label: 'drums', showIf: { key: 'palette', is: 'own' } },
+  colBass: { type: 'color', value: '#7d6bff', label: 'bass', showIf: { key: 'palette', is: 'own' } },
   colX0: { type: 'number', value: 0, min: -4, max: 4, step: 0.005, label: 'centre x' },
   colY0: { type: 'number', value: 0, min: -4, max: 4, step: 0.005, label: 'centre y' },
   colX1: { type: 'number', value: 1, min: -4, max: 4, step: 0.005, label: 'handle x' },
@@ -209,11 +240,11 @@ const params = {
 
 const groups: Record<string, string[]> = {
   Layout: ['style', 'flow', 'parts', 'rowShow', 'partSpread', 'systems', 'perRow', 'rows', 'lanes', 'margin', 'gap', 'rowGap', 'stretch', 'square', 'groupGap'],
-  Colour: ['palette', 'offset', 'accent', 'colRepeat', 'colX0', 'colY0', 'colX1', 'colY1'],
+  Colour: ['palette', 'colVocals', 'colInstruments', 'colDrums', 'colBass', 'offset', 'accent', 'colRepeat', 'colX0', 'colY0', 'colX1', 'colY1'],
   Layers: ['hazeLayers', 'layerBlend', 'layerOpacity'],
   // `crisp`: the matrix dots themselves (0 = only their haze and streaks show, and the accent dots).
   Dots: ['crisp', 'character', 'ghost', 'dotMin', 'dotBase', 'dotEvent', 'soft', 'streak', 'streakWidth', 'ruling', 'rulingDiv'],
-  'Accent dots': ['accents', 'accentSize', 'accentOn', 'accentColour'],
+  'Accent dots': ['accents', 'accentSize', 'accentOn', 'accentColour', 'accVocals', 'accInstruments', 'accDrums', 'accBass'],
   Haze: hazeKeys.filter((k) => k !== 'crisp'),
   Depth: ['depth', 'focus', 'depthBy', 'depthSeed'],
   Grain: ['softGrain', 'paper'],
@@ -601,6 +632,8 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
     }
     if (red) return [rowOf('red'), 0.5 + 0.3 * lv]
     if (palette === 'ink') return [ROW_INK, kind === 'ghost' ? 0.22 : kind === 'base' ? 0.25 + 0.5 * lv : 0.75 + 0.25 * lv]
+    // Your colours: the part's own ramp, pale for quiet dots, the colour itself for hits.
+    if (palette === 'own') return [ROW_OWN + ORDER.indexOf(stem), kind === 'ghost' ? 0.05 : kind === 'base' ? 0.25 + 0.3 * lv : 0.6 + 0.2 * lv]
     if (palette === 'across') {
       if (kind === 'ghost') return [ROW_INK, 0.22]
       return [ROW_MULTI, (kind === 'base' ? 0.3 * lv : 0.3 + 0.5 * lv) + p.offset * ORDER.indexOf(stem)]
@@ -621,7 +654,7 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
     const look = (k: 'ghost' | 'base' | 'event', v: number, rd: boolean): [number, number, number, number] => {
       if (!pal) {
         const [r0, t0] = paint(k, v, cp.stem, cp.sec, rd)
-        return [r0, palette === 'across' || k === 'ghost' || rd ? t0 : offsetT(t0, cp.stem), 1, 1]
+        return [r0, palette === 'across' || palette === 'own' || k === 'ghost' || rd ? t0 : offsetT(t0, cp.stem), 1, 1]
       }
       const out = pal.paint({
         kind: k, lv: v, stem: cp.stem, sec: cp.sec, red: rd, g: cp.g, l: cp.l, T, N, u: cp.u, v: cp.v,
@@ -684,12 +717,13 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
     const cp = colourPlace(x, y, 0, start[stem] ?? 0, stem)
     if (!pal) {
       const [r0, t0] = paint(kind, lv, cp.stem, cp.sec, false)
-      return [r0, palette === 'across' || kind === 'ghost' ? t0 : offsetT(t0, cp.stem), 1, 1]
+      return [r0, palette === 'across' || palette === 'own' || kind === 'ghost' ? t0 : offsetT(t0, cp.stem), 1, 1]
     }
     const out = pal.paint({ kind, lv, stem: cp.stem, sec: cp.sec, red: false, g: cp.g, l: cp.l, T, N, u: cp.u, v: cp.v, within: 0.5, offset: p.offset })
     return [paletteRow(explore, out.row), kind === 'ghost' ? clamp01(out.t) : offsetT(clamp01(out.t), cp.stem), out.alpha ?? 1, out.size ?? 1]
   }
-  pic.streakColour = (stem) => lin(pal?.streak?.(stem, { g: 0, l: start[stem] ?? 0, T, N, sec: 0 }) ?? RAMPS[streakHue(stem, 0)][1])
+  const ownStreak = (stem: Stem) => (palette === 'own' ? ownRamp(p[OWN_KEY[stem]] ?? '#888888')[1] : null)
+  pic.streakColour = (stem) => lin(ownStreak(stem) ?? pal?.streak?.(stem, { g: 0, l: start[stem] ?? 0, T, N, sec: 0 }) ?? RAMPS[streakHue(stem, 0)][1])
   const total = streaks.reduce((x, s) => x + (s.g1 - s.g0), 0)
   const segStep = 0.5 * Math.max(1, Math.ceil((total * 2) / BUDGET))
   for (const { l, g0, g1, v } of streaks) {
@@ -697,7 +731,7 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
     const here = at(g0, l)
     const cp = colourPlace(here.x, here.y, g0, l, laneStem[l]!)
     const stem = cp.stem
-    const color = lin(pal?.streak?.(stem, { g: cp.g, l: cp.l, T, N, sec: cp.sec }) ?? RAMPS[streakHue(stem, cp.g)][1])
+    const color = lin(ownStreak(stem) ?? pal?.streak?.(stem, { g: cp.g, l: cp.l, T, N, sec: cp.sec }) ?? RAMPS[streakHue(stem, cp.g)][1])
     for (let g = g0; g < g1; g += segStep) {
       const u = (g - g0) / Math.max(1e-3, g1 - g0)
       const { x, y } = at(g, l)
@@ -735,7 +769,7 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
           const cp = colourPlace(x, y, Math.floor(g), l, own)
           const stem = p.accentColour === 'next' ? ORDER[(ORDER.indexOf(cp.stem) + 1) % ORDER.length] : cp.stem
           let row: number, t: number
-          if (p.accentColour === 'ink') { row = ROW_INK; t = 1 } else if (!pal) {
+          if (p.accentColour === 'ink') { row = ROW_INK; t = 1 } else if (p.accentColour === 'picked') { row = ROW_ACC + ORDER.indexOf(own); t = 0.5 } else if (!pal) {
             const [r0, t0] = paint('event', 0.9, stem, cp.sec, false)
             row = r0
             t = palette === 'across' ? t0 : offsetT(t0, stem)
@@ -789,7 +823,9 @@ function fieldsOf(
   // deepest, as they stack back to front), so the parts read apart in one family. Otherwise each its own hue.
   const mono = (p.palette in RAMPS ? p.palette : null) as keyof typeof RAMPS | null
   const STEP: Record<Stem, number> = { ...DEPTH }
-  const hexOf = (s: Stem, lighter = 0) => (mono ? RAMPS[mono][Math.max(0, STEP[s] - lighter)] : RAMPS[STEM_HUE[s]][2 - lighter])
+  // (Your colours: the part's colour, its lighter edge a step paler.)
+  const hexOf = (s: Stem, lighter = 0) =>
+    p.palette === 'own' ? ownRamp(p[OWN_KEY[s]] ?? '#888888')[2 - lighter] : mono ? RAMPS[mono][Math.max(0, STEP[s] - lighter)] : RAMPS[STEM_HUE[s]][2 - lighter]
   const core = (s: Stem) => lin(hexOf(s))
   const tint = (s: Stem) => mixc(lin(hexOf(s)), lin(hexOf(s, 1)), p.tint)
   const form = BLOB_FORMS[p.form as keyof typeof BLOB_FORMS] ?? BLOB_FORMS.blob
@@ -888,7 +924,7 @@ function fieldsOf(
           const { x, y } = g.at(t, g.start[stem] + Math.floor((g.count[stem] - 1) / 2))
           const own = p.accentColour === 'next' ? ORDER[(ORDER.indexOf(stem) + 1) % ORDER.length] : stem
           // Crisp, over the shapes (with them, on the front layer).
-          const color = p.accentColour === 'ink' ? lin('#121317') : lin(mono ? RAMPS[mono][Math.min(4, STEP[own] + 1)] : RAMPS[STEM_HUE[own]][3])
+          const color = p.accentColour === 'ink' ? lin('#121317') : p.accentColour === 'picked' ? lin(p[ACC_KEY[stem]] ?? '#121317') : lin(mono ? RAMPS[mono][Math.min(4, STEP[own] + 1)] : RAMPS[STEM_HUE[own]][3])
           pic.dots.push({ x, y, rx: r, ry: r, softness: 0.04, color, alpha: 1, form: BLOB_FORMS.blob, wobble: 0 })
         }
       }
@@ -1121,7 +1157,10 @@ function create(): SubInstance {
       bars.setGradient([RAMPS.grey[1], RAMPS.grey[2]], ROW_RULE)
       // The explorations' rows, on the haze layers too (they blur the same marks).
       for (const layer of [bars, layers.barsFar.bars, layers.barsMid.bars, ...layers.hazeByStem.map((h) => h.bars)])
+      {
         PALETTES.forEach((pl, i) => pl.rows.forEach((hexes, r) => layer.setGradient(hexes, paletteRow(i, r))))
+        setOwnRows(layer, p)
+      }
       layers.grain.value = p.paper
       layers.softGrain.value = ((p.softGrain ?? 0) / 100) * 0.7
       // Manual: marks placed by hand, over the picture or (canvas blank) alone.
