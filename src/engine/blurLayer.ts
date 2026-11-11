@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { float, max, mix, positionGeometry, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
 import { BarLayer } from './barLayer'
+import { BlobLayer } from './blobLayer'
 import { PREVIEW_PIXEL_RATIO } from './pixels'
 
 // Content drawn offscreen and blurred as one image, so overlapping shapes
@@ -62,6 +63,8 @@ export abstract class BlurLayer {
   readonly opacity = uniform(1)
   /** 0 = soft fog; toward 1 the blurred coverage is cut at half, so nearby shapes pool into clean-edged forms. */
   readonly edge = uniform(0)
+  /** Fades the finished layer (after gain, edge and opacity, so it fades even a layer pushed solid). */
+  readonly fade = uniform(1)
 
   private scene = new THREE.Scene()
   private camera = new THREE.OrthographicCamera()
@@ -88,7 +91,7 @@ export abstract class BlurLayer {
     const a0 = c.a.mul(this.gain).clamp(0, 1)
     const w = max(float(1).sub(this.edge).mul(0.5), float(0.01))
     // Opacity past 1 pushes the thin, blurred coverage toward solid.
-    const a = mix(a0, smoothstep(float(0.5).sub(w), float(0.5).add(w), a0), this.edge).mul(this.opacity).clamp(0, 1)
+    const a = mix(a0, smoothstep(float(0.5).sub(w), float(0.5).add(w), a0), this.edge).mul(this.opacity).clamp(0, 1).mul(this.fade.clamp(0, 1))
     const rgb = c.rgb.div(max(c.a, float(1e-4)))
     this.normalNodes = { color: vec4(rgb, 1), opacity: a }
     // Multiply: the colour over the page and whatever is under it, so overlaps darken (as ink does).
@@ -201,6 +204,24 @@ export class BlurredBarLayer extends BlurLayer {
     if (this.bars.count === 0) return false
     this.bars.minFeather.value = 0.5 * this.texel
     this.bars.upload()
+    return true
+  }
+}
+
+/** Soft shapes (blobs) blurred together as one image: Dots' fields, a layer per sound. */
+export class BlurredBlobLayer extends BlurLayer {
+  /** Push blobs here; count is reset each frame. */
+  readonly blobs: BlobLayer
+
+  constructor(capacity: number, renderOrder: number) {
+    const blobs = new BlobLayer(capacity, 0)
+    super(blobs.mesh, renderOrder)
+    this.blobs = blobs
+  }
+
+  protected prepare() {
+    if (this.blobs.count === 0) return false
+    this.blobs.upload()
     return true
   }
 }

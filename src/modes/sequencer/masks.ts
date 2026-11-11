@@ -425,7 +425,7 @@ export function applyMasks(frame: FrameContext, text: unknown, timelineSettings?
     }
   }
   for (const layer of [l.bars, l.barsMid.bars, l.barsFar.bars, ...l.hazeByStem.map((h) => h.bars)]) bars(layer)
-  for (const layer of [l.front, l.back]) blobs(layer)
+  for (const layer of [l.front, l.back, ...l.shapesByStem.map((h) => h.blobs)]) blobs(layer)
   // Marks with their own blend mode, too.
   l.blend.eachSpec((s) => {
     push(fields, s.x, s.y, time, tmp)

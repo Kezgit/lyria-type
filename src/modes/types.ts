@@ -1,12 +1,13 @@
 import type { LetterParts } from './shared/parts'
 import type { ParamSchema } from '../app/params'
 import type { AudioFeatures } from '../audio/features'
-import type { Backdrop, Grain, SoftGrain } from '../engine/backdrop'
+import type { Backdrop, Grain } from '../engine/backdrop'
+import type { GrainFx } from '../engine/grainFx'
 import type { BarLayer } from '../engine/barLayer'
 import type { BlobLayer } from '../engine/blobLayer'
 import type { GlyphLayer } from '../engine/glyphLayer'
 import type { BlurredGlyphLayer } from '../engine/blurredGlyphLayer'
-import type { BlurredBarLayer } from '../engine/blurLayer'
+import type { BlurredBarLayer, BlurredBlobLayer } from '../engine/blurLayer'
 import type { GooLayer } from '../engine/gooLayer'
 import type { FieldFx } from '../engine/fieldFx'
 import type { StretchFx } from '../engine/stretchFx'
@@ -50,8 +51,10 @@ export interface Layers {
   canvas: CanvasLayer
   /** The haze as one blurred layer per sound (ORDER: vocals, instruments, drums, bass); start empty. */
   hazeByStem: BlurredBarLayer[]
+  /** Soft shapes blurred per sound (vocals, instruments, drums, bass). */
+  shapesByStem: BlurredBlobLayer[]
   /** Soft grain over everything (0..1). */
-  softGrain: SoftGrain
+  softGrain: GrainFx
 }
 
 export interface FrameContext {

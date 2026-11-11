@@ -130,7 +130,7 @@ const params = {
 
   // Accent dots (after Stacked line): small crisp dots on the grid, a few per bar, over everything.
   accents: { type: 'number', value: 0, min: 0, max: 8, step: 1, label: 'accent dots per bar' },
-  accentSize: { type: 'number', value: 0.12, min: 0.03, max: 0.5, step: 0.005, label: 'accent size' },
+  accentSize: { type: 'number', value: 0.12, min: 0.005, max: 0.5, step: 0.005, label: 'accent size' },
   accentOn: { type: 'select', value: 'parts', label: 'accents on', options: { 'one lane per part': 'parts', 'every lane': 'lanes' } },
   accentColour: { type: 'select', value: 'next', label: 'accent colour', options: { "the next part's": 'next', "its own part's": 'own', ink: 'ink' } },
 
@@ -139,8 +139,14 @@ const params = {
   hazeLayers: { type: 'select', value: 'together', label: 'haze', options: { 'blended together': 'together', 'a layer per sound': 'sound' } },
   layerBlend: { type: 'select', value: 'normal', label: 'layers blend', options: { normal: 'normal', multiply: 'multiply' } },
   layerOpacity: { type: 'number', value: 1, min: 0.05, max: 1, step: 0.01, label: 'layer opacity' },
-  // Grain (Stacked line's): soft, still, in the colours.
-  softGrain: { type: 'number', value: 0, min: 0, max: 100, step: 1, label: 'soft grain' },
+  // Depth (Stacked line's): some forms in focus, the rest pushed back, blurrier and a little fainter. By form
+  // (patches of the line), by part, or across / down the frame. Needs the haze (or, drawn as fields, the blur).
+  depth: { type: 'number', value: 0, min: 0, max: 100, step: 1, label: 'depth blur' },
+  focus: { type: 'number', value: 30, min: 0, max: 100, step: 1, label: 'in focus (%)' },
+  depthBy: { type: 'select', value: 'shape', label: 'depth by', options: { form: 'shape', part: 'part', across: 'across', down: 'down' } },
+  depthSeed: { type: 'number', value: 1, min: 0, max: 999, step: 1, label: 'shuffle depth' },
+  // Grain (Stacked line's, the same in every mode): its noise in soft light over the finished frame.
+  softGrain: { type: 'number', value: 0, min: 0, max: 100, step: 1, label: 'grain' },
 
   floor: { type: 'number', value: 0.1, min: 0, max: 0.6, step: 0.01, label: 'ignore quieter than' },
   gamma: { type: 'number', value: 1.3, min: 0.3, max: 4, step: 0.05, label: 'contrast' },
@@ -174,7 +180,7 @@ const params = {
   streakWidth: { type: 'number', value: 1.2, min: 0.3, max: 3, step: 0.05, label: 'streak width' },
   ruling: { type: 'number', value: 0.1, min: 0, max: 0.5, step: 0.01, label: 'grid lines' },
   rulingDiv: { type: 'number', value: 3, min: 1, max: 8, step: 1, label: 'lines per dot' },
-  paper: { type: 'number', value: 0.03, min: 0, max: 0.15, step: 0.005, label: 'paper grain' },
+  paper: { type: 'number', value: 0.03, min: 0, max: 0.15, step: 0.005, label: 'paper texture' },
 
   motion: { type: 'select', value: 'still', options: { still: 'still', ...Object.fromEntries(MOTIONS.map((m) => [m.label, m.id])) } },
   motionAmount: { type: 'number', value: 0.6, min: 0, max: 1, step: 0.01, label: 'amount' },
@@ -209,17 +215,33 @@ const groups: Record<string, string[]> = {
   Dots: ['crisp', 'character', 'ghost', 'dotMin', 'dotBase', 'dotEvent', 'soft', 'streak', 'streakWidth', 'ruling', 'rulingDiv'],
   'Accent dots': ['accents', 'accentSize', 'accentOn', 'accentColour'],
   Haze: hazeKeys.filter((k) => k !== 'crisp'),
-  Grain: ['paper', 'softGrain'],
+  Depth: ['depth', 'focus', 'depthBy', 'depthSeed'],
+  Grain: ['softGrain', 'paper'],
   'Song window': ['anchor', 'from', 'span'],
   'Reading the music': ['floor', 'gamma', 'echo', 'laneFloor', 'held', 'sustain'],
   Motion: ['motion', 'motionAmount', 'motionSpeed', ...motionKeys],
   Fields: ['form', 'size', 'softness', 'opacity', 'tint', 'merge', 'minEvent', 'hats', 'drumGroup', 'wash', 'wobble', 'fieldGrain'],
   'Dot shape': dotShapeKeys,
 }
-/** The Fields folder only for the fields style. */
-/** The Fields folder only for the fields style. */
+/**
+ * Drawn as fields, only what moves the shapes: their look (Shapes), the blur through the haze settings
+ * (Blur), how notes gather into shapes (Gathering). The dot matrix's own folders hide.
+ */
+const FIELD_GROUPS: Record<string, string[]> = {
+  Layout: groups.Layout.filter((k) => k !== 'rowShow'),
+  Colour: groups.Colour,
+  Layers: groups.Layers,
+  Depth: groups.Depth,
+  Shapes: ['form', 'size', 'character', 'softness', 'opacity', 'tint', 'wobble', 'fieldGrain'],
+  Blur: ['hazeBlur', 'hazeStretch', 'hazeGain', 'hazeOpacity', 'hazeEdge'],
+  Gathering: ['merge', 'minEvent', 'hats', 'drumGroup', 'wash'],
+  'Accent dots': groups['Accent dots'],
+  Grain: groups.Grain,
+  'Song window': groups['Song window'],
+  'Reading the music': groups['Reading the music'],
+}
 const groupsFor = (v: Record<string, any>) =>
-  v.style === 'fields' ? groups : Object.fromEntries(Object.entries(groups).filter(([title]) => title !== 'Fields'))
+  v.style === 'fields' ? FIELD_GROUPS : Object.fromEntries(Object.entries(groups).filter(([title]) => title !== 'Fields'))
 
 /**
  * Until the audio analysis lands: a coarse one from the notes alone (as
@@ -311,8 +333,13 @@ function windowOf(comp: Composition, a: TrackAnalysis, p: Record<string, any>): 
 }
 
 interface Picture {
-  /** Fields' blobs. */
+  /** Fields' blobs (and their accent dots). */
   dots: BlobSpec[]
+  /** Fields' shapes, kept apart so they can be blurred a layer per sound; per shape its part (index in ORDER). */
+  shapes: BlobSpec[]
+  shapeStems: number[]
+  /** Each part's place back to front (0 = furthest back), by how big its shapes are. */
+  shapeDepth: Record<Stem, number>
   /** The dot matrix, as round bars; per dot its part (index in Barcode's ORDER), weight and section. */
   marks: BarSpec[]
   stems: number[]
@@ -331,7 +358,7 @@ interface Picture {
   /** And a streak's colour in a part (linear rgb). */
   streakColour?: (stem: Stem) => RGB
 }
-const empty = (): Picture => ({ dots: [], marks: [], stems: [], weights: [], sections: [], streaks: [], ruling: null, accents: [], info: [], grid: null })
+const empty = (): Picture => ({ dots: [], shapes: [], shapeStems: [], shapeDepth: { ...DEPTH }, marks: [], stems: [], weights: [], sections: [], streaks: [], ruling: null, accents: [], info: [], grid: null })
 
 /** One note or hit, in slots (fractional), for the fields. */
 interface Ev { l: number; g: number; end: number; e: number; w: number; stem: Stem; voice: string }
@@ -479,11 +506,12 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
   const oneRow = p.parts === 'row'
   const NL = oneRow ? 1 : N
   const lane = (l: number) => (oneRow ? 0 : l)
-  // Every part on the row: each a little off the line by its place among the parts (lowest at the bottom).
+  // On one row: each part a little off the line by its place among the parts (lowest at the bottom).
   const eachOnRow = oneRow && p.rowShow !== 'leader'
   const partsHere = Object.keys(start) as Stem[]
+  // (Leading the line too: each part's forms on a lane of their own, so they overlap like Stacked line's layers.)
   const partOff = (l: number) => {
-    if (!eachOnRow || !laneStem[l]) return 0
+    if (!oneRow || !laneStem[l]) return 0
     const i = partsHere.indexOf(laneStem[l]!)
     return (i - (partsHere.length - 1) / 2) * (p.partSpread ?? 0.3)
   }
@@ -509,7 +537,7 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
   }
 
   pic.grid = { w0, w1, stepsPer, T, N, Rw, S, pX, pY, W, H }
-  if (fields) return fieldsOf(p, { T, N, S, Rw, pX, pY, stepsPer, at, events, loud, strength, laneStem, start, count, across })
+  if (fields) return fieldsOf(p, { T, N, S, Rw, pX, pY, stepsPer, at, events, loud, strength, laneStem, start, count, across, oneRow })
 
   // Dots: base dots (or ghosts), events over them, coloured as Barcode's marks.
   const palette: string = p.palette
@@ -686,7 +714,10 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
   // part's event colour (the next part's, so they stand out, as Stacked line's do) or ink.
   if (p.accents > 0) {
     const per = Math.round(p.accents)
-    const r = Math.max(0.5, p.accentSize * d)
+    // On one row, sized from the spacing along time (the squeezed spacing across leaves them a few px wide
+    // beside forms many times taller).
+    const unit = oneRow ? (across ? pX : pY) : d
+    const r = Math.max(0.5, p.accentSize * unit)
     const lanes = p.accentOn === 'lanes'
       ? laneStem.map((s, l) => (s ? l : -1)).filter((l) => l >= 0)
       : oneRow
@@ -734,6 +765,12 @@ function generate(comp: Composition, a: TrackAnalysis, rows: number, p: Record<s
  * per part. Front = blobs (long clusters first, so short bright ones sit on
  * top), back = wash.
  */
+/** Fields' parts back to front: the big, pale bass behind, the small, dark drums in front. */
+const DEPTH: Record<Stem, number> = { bass: 0, instruments: 1, vocals: 2, drums: 3 }
+
+/** Fields' size per part, at full character. */
+const FIELD_CHAR: Record<Stem, number> = { bass: 1.35, instruments: 1.1, vocals: 0.85, drums: 0.6 }
+
 function fieldsOf(
   p: Record<string, any>,
   g: {
@@ -743,11 +780,18 @@ function fieldsOf(
     laneStem: (Stem | null)[]; start: Record<Stem, number>; count: Record<Stem, number>
     /** Time runs across (the blobs lie along x). */
     across: boolean
+    /** All on one row: each part's notes gather as one run of shapes (not a run per pitch lane). */
+    oneRow: boolean
   },
 ): Picture {
   const pic = empty()
-  const core = (s: Stem) => lin(RAMPS[STEM_HUE[s]][2])
-  const tint = (s: Stem) => mixc(lin(RAMPS[STEM_HUE[s]][2]), lin(RAMPS[STEM_HUE[s]][1]), p.tint)
+  // One hue (a mono colour): each part a different step of its ramp (the big bass palest, the small drums
+  // deepest, as they stack back to front), so the parts read apart in one family. Otherwise each its own hue.
+  const mono = (p.palette in RAMPS ? p.palette : null) as keyof typeof RAMPS | null
+  const STEP: Record<Stem, number> = { ...DEPTH }
+  const hexOf = (s: Stem, lighter = 0) => (mono ? RAMPS[mono][Math.max(0, STEP[s] - lighter)] : RAMPS[STEM_HUE[s]][2 - lighter])
+  const core = (s: Stem) => lin(hexOf(s))
+  const tint = (s: Stem) => mixc(lin(hexOf(s)), lin(hexOf(s, 1)), p.tint)
   const form = BLOB_FORMS[p.form as keyof typeof BLOB_FORMS] ?? BLOB_FORMS.blob
   /** y at a fractional time position (slots from the window start). */
   const yAt = (t: number, l: number) => g.at(t - 0.5, l)
@@ -758,8 +802,11 @@ function fieldsOf(
   // the trail survives.
   const maxE = g.events.reduce((m, ev) => Math.max(m, ev.e), 1e-6)
   const solo = (ev: Ev) => ev.voice === 'kick' || ev.voice === 'snare'
-  const kept = g.events.filter((ev) => ev.g >= 0 && ev.e / maxE >= p.minEvent * (ev.voice === 'hat' ? 0.5 : 1)).sort((a, b) => a.l - b.l || a.g - b.g)
-  interface Cluster { l: number; g0: number; g1: number; e: number; w: number; n: number; stem: Stem }
+  const kept = g.events
+    .filter((ev) => ev.g >= 0 && ev.e / maxE >= p.minEvent * (ev.voice === 'hat' ? 0.5 : 1))
+    .map((ev) => (g.oneRow ? { ...ev, l: g.start[ev.stem] ?? ev.l } : ev))
+    .sort((a, b) => a.l - b.l || a.g - b.g)
+  interface Cluster { l: number; g0: number; g1: number; e: number; w: number; n: number; stem: Stem; beat: boolean }
   const clusters: Cluster[] = []
   let cur: Cluster | null = null
   for (const ev of kept) {
@@ -771,19 +818,36 @@ function fieldsOf(
       cur.w = Math.max(cur.w, ev.w)
       cur.n++
     } else {
-      cur = { l: ev.l, g0: ev.g, g1: ev.end, e: ev.e / maxE, w: ev.w, n: 1, stem: ev.stem }
+      cur = { l: ev.l, g0: ev.g, g1: ev.end, e: ev.e / maxE, w: ev.w, n: 1, stem: ev.stem, beat: solo(ev) }
       clusters.push(cur)
     }
     cur.g1 = Math.min(cur.g1, (sys + 1) * g.Rw)
   }
   clusters.sort((a, b) => b.g1 - b.g0 - (a.g1 - a.g0) || a.l - b.l || a.g0 - b.g0)
+  // Back to front by size: the part with the biggest shapes (on average) furthest back and palest, the
+  // smallest in front and deepest, so every part shows (big pale forms under small dark ones).
+  const sizeOf: Record<string, { sum: number; n: number }> = {}
+  for (const c of clusters) {
+    const z = (sizeOf[c.stem] ??= { sum: 0, n: 0 })
+    z.sum += (g.oneRow && c.beat ? p.size : c.g1 - c.g0 + 0.8 * p.size) * (0.45 + 0.55 * c.e) * (p.character > 0 ? lerp(1, FIELD_CHAR[c.stem], clamp01(p.character)) : 1)
+    z.n++
+  }
+  const avg = (st: Stem) => (sizeOf[st] ? sizeOf[st].sum / sizeOf[st].n : 0)
+  ;(Object.keys(DEPTH) as Stem[]).sort((a, b) => avg(b) - avg(a) || DEPTH[a] - DEPTH[b]).forEach((st, i) => (STEP[st] = i))
+  pic.shapeDepth = STEP
   for (const c of clusters) {
     const span = c.g1 - c.g0
     const { x, y } = yAt((c.g0 + c.g1) / 2, c.l)
     // Wide and opaque by strength (and a little by how many notes it gathers); tall as it lasts, plus a soft pad.
     const wide = (0.45 + 0.55 * c.e) * (1 + 0.15 * Math.log2(c.n)) * (0.5 + 0.5 * c.w)
-    const acrossR = 0.5 * (g.across ? g.pY : g.pX) * p.size * wide, alongR = 0.5 * (g.across ? g.pX : g.pY) * (span + 0.8 * p.size)
-    pic.dots.push({
+    // Part character: bass big, drums small (as the dots have it).
+    const ch = p.character > 0 ? lerp(1, FIELD_CHAR[c.stem], clamp01(p.character)) : 1
+    const acrossR = 0.5 * (g.across ? g.pY : g.pX) * p.size * wide * ch
+    // On one row a beat's group is a round form at its middle (not a bar over the whole group, which runs the
+    // beats together into one band).
+    const alongR = g.oneRow && c.beat ? acrossR * 1.15 : 0.5 * (g.across ? g.pX : g.pY) * (span + 0.8 * p.size)
+    pic.shapeStems.push(ORDER.indexOf(c.stem))
+    pic.shapes.push({
       x, y, rx: g.across ? alongR : acrossR, ry: g.across ? acrossR : alongR,
       softness: p.softness, wobble: p.wobble, seed: mod(c.l * 0.618 + c.g0 * 0.137, 1), form,
       color: core(c.stem), color2: tint(c.stem), gradient: BLOB_GRADIENTS.radial,
@@ -806,6 +870,27 @@ function fieldsOf(
           x, y, rx: g.across ? 0.9 * chunk * g.pX : 0.6 * k * g.pX, ry: g.across ? 0.6 * k * g.pY : 0.9 * chunk * g.pY, softness: 1, form: BLOB_FORMS.orb,
           color: tint(stem), alpha: p.wash * v * (stem === 'drums' ? p.hats + 0.3 : 1),
         })
+      }
+    }
+  }
+  // Accent dots, as the dot picture has them: `accents` per bar, on the line (one row) or each part's middle lane.
+  if (p.accents > 0) {
+    const per = Math.round(p.accents)
+    const r = Math.max(0.5, p.accentSize * Math.min(g.pX, g.pY))
+    const parts = Object.keys(g.start) as Stem[]
+    const bars = Math.ceil((g.T * g.stepsPer) / 16)
+    for (let bar = 0; bar < bars; bar++) {
+      for (let j = 0; j < per; j++) {
+        const t = ((bar * 16 + ((j + 0.5) * 16) / per) / g.stepsPer) - 0.5
+        if (t < 0 || t >= g.T) continue
+        const list = g.oneRow ? [parts[(bar * per + j) % parts.length]] : parts
+        for (const stem of list) {
+          const { x, y } = g.at(t, g.start[stem] + Math.floor((g.count[stem] - 1) / 2))
+          const own = p.accentColour === 'next' ? ORDER[(ORDER.indexOf(stem) + 1) % ORDER.length] : stem
+          // Crisp, over the shapes (with them, on the front layer).
+          const color = p.accentColour === 'ink' ? lin('#121317') : lin(mono ? RAMPS[mono][Math.min(4, STEP[own] + 1)] : RAMPS[STEM_HUE[own]][3])
+          pic.dots.push({ x, y, rx: r, ry: r, softness: 0.04, color, alpha: 1, form: BLOB_FORMS.blob, wobble: 0 })
+        }
       }
     }
   }
@@ -878,40 +963,132 @@ function drawPlaced(
 }
 
 /**
+ * Depth, as Stacked line has it: each form a depth 0 (in focus) .. 1 (furthest back), drawn in three tiers
+ * (in focus, middle, back), each a layer of its own per sound (layers 0-3, 4-7, 8-11). `focus`% of the forms
+ * sit in focus; the rest go back. By form: patches along the line (neighbouring marks share one, so a form
+ * stays whole); by part: one per sound; across / down: by place in the frame.
+ */
+const TIER_D = [0.03, 0.55, 0.9]
+const hash = (n: number) => mod(Math.sin(n * 12.9898 + 78.233) * 43758.5453, 1)
+function depthAt(p: Record<string, any>, x: number, y: number, W: number, H: number, si: number, form: number): number {
+  const seed = (p.depthSeed ?? 1) * 7.13
+  const pick = (k: number) => (hash(k + seed) < (p.focus ?? 30) / 100 ? 0.06 * hash(k + seed + 3.1) : 0.4 + 0.6 * hash(k + seed + 5.7))
+  if (p.depthBy === 'part') return pick(si * 17.31)
+  if (p.depthBy === 'across') return clamp01(x / W + 0.5 + (hash(form + seed) - 0.5) * 0.12)
+  if (p.depthBy === 'down') return clamp01(0.5 - y / H + (hash(form + seed) - 0.5) * 0.12)
+  return pick(form * 3.17 + si * 101.9)
+}
+const tierOf = (d: number) => (d < 0.2 ? 0 : d < 0.7 ? 1 : 2)
+/** A tier's blur (from the base blur) and fade: in focus sharper, further back blurrier and fainter. */
+function tierLook(p: Record<string, any>, base: number, tier: number, floor: number) {
+  const amt = clamp01((p.depth ?? 0) / 100)
+  const d = TIER_D[tier]
+  const keep = Math.max(floor, 1 - amt * (1 - d))
+  return { radius: base * keep + amt * Math.pow(d, 1.3) * Math.max(base, 24) * 1.3, fade: 1 - amt * 0.18 * d }
+}
+
+/**
  * The haze as a layer per sound: each part's marks blurred on their own (so one sound's haze never muddies
- * another's), at that part's amount (Layers) x the layer opacity, laid on normally or multiplied in. The near
- * haze stays one layer.
+ * another's), at that part's amount (Layers) x the layer opacity, laid on normally or multiplied in; with depth,
+ * a layer per sound per depth tier. The amount and layer opacity fade the finished layer (so they work even with
+ * the haze pushed solid): overlapping sounds tint each other, as Stacked line's colour layers do, instead of
+ * the top one covering the rest. Blended together (`bySound` false), with depth, every sound shares a tier's layer.
  */
 function hazeBySound(
   layers: FrameContext['layers'], out: Parameters<typeof drawHaze>[1], p: Record<string, any>, ink: FrameContext['ink'],
-  all: Record<string, any>, lop: number, multiply: boolean,
+  all: Record<string, any>, lop: number, multiply: boolean, W: number, H: number, bySound = true,
 ) {
-  // The near haze as ever; the far one comes apart, per sound, below.
-  drawHaze(layers, out, p, ink)
-  layers.barsFar.bars.count = 0
-  layers.barsMid.opacity.value *= lop
+  if (bySound) {
+    // The near haze as ever; the far one comes apart, per sound, below.
+    drawHaze(layers, out, p, ink)
+    layers.barsFar.bars.count = 0
+    layers.barsMid.fade.value = lop
+  }
   const from = { hair: HAIR, medium: MEDIUM, heavy: HEAVY, solid: SOLID }[p.hazeFrom as string] ?? HAIR
   const tint = p.hazeTint as string
   const tone = clamp01(p.hazeTone)
-  ORDER.forEach((stem, si) => {
-    const layer = layers.hazeByStem[si]
-    const amount = Math.min(1, Math.max(0, all[stem] ?? 1))
+  const deep = (p.depth ?? 0) > 0
+  // Patches of the line for depth by form: ~10 across the frame.
+  const patch = (x: number, y: number) => Math.floor((x / W + 0.5) * 10) + 37 * Math.floor((0.5 - y / H) * 6)
+  const used = new Set<number>()
+  out.marks.forEach((m, i) => {
+    const si = out.stems[i]
+    if (out.weights[i] < from || si < 0) return
+    const amount = Math.max(0, all[ORDER[si]] ?? 1)
     if (amount <= 0.001) return
-    layer.radius = p.hazeBlur
+    const tier = deep ? tierOf(depthAt(p, m.x, m.y, W, H, si, patch(m.x, m.y))) : 0
+    const li = tier * 4 + (bySound ? si : 0)
+    const layer = layers.hazeByStem[li]
+    if (!used.has(li)) {
+      used.add(li)
+      barcodeGradients(layer.bars, ink)
+      layer.bars.blend = 'normal'
+    }
+    const a = bySound ? m.alpha ?? 1 : (m.alpha ?? 1) * Math.min(1, amount)
+    if (tint === 'marks') return layer.bars.push({ ...m, alpha: a, grain: 0 })
+    const hue = tint === 'sections' ? SECTION_HUES[out.section(i) % SECTION_HUES.length] : STEM_HUE[ORDER[si]]
+    layer.bars.push({ ...m, alpha: a, row: rowOf(hue), t0: tone, t1: tone, grain: 0 })
+  })
+  for (const li of used) {
+    const layer = layers.hazeByStem[li]
+    const tier = Math.floor(li / 4), si = li % 4
+    // (Dots make their forms by blurring together: in focus keeps nearly half the blur, so forms stay whole.)
+    const look = tierLook(p, p.hazeBlur, tier, 0.45)
+    layer.radius = deep ? look.radius : p.hazeBlur
     layer.stretch = p.hazeStretch
     layer.gain.value = p.hazeGain
-    layer.opacity.value = p.hazeOpacity * amount * lop
+    layer.opacity.value = p.hazeOpacity
     layer.edge.value = clamp01(p.hazeEdge)
+    layer.fade.value = (bySound ? Math.min(1, Math.max(0, all[ORDER[si]] ?? 1)) : 1) * lop * (deep ? look.fade : 1)
     layer.blend = multiply ? 'multiply' : 'normal'
-    layer.bars.blend = 'normal'
-    barcodeGradients(layer.bars, ink)
-    out.marks.forEach((m, i) => {
-      if (out.stems[i] !== si || out.weights[i] < from) return
-      if (tint === 'marks') return layer.bars.push({ ...m, grain: 0 })
-      const hue = tint === 'sections' ? SECTION_HUES[out.section(i) % SECTION_HUES.length] : STEM_HUE[stem]
-      layer.bars.push({ ...m, row: rowOf(hue), t0: tone, t1: tone, grain: 0 })
+  }
+}
+
+/**
+ * Fields' shapes. Unblurred (haze blur 0) they go on the front layer as ever. Blurred, they go through the
+ * haze settings: a layer per sound (each part's shapes blurred apart, so the parts stay distinct shapes and
+ * colours over each other) or all together, per depth tier with depth (each shape its own depth); the part's
+ * amount, the layer opacity and the depth fade the finished layer, so overlapping parts tint each other.
+ */
+function drawShapes(layers: FrameContext['layers'], pic: Picture, p: Record<string, any>, all: Record<string, any>, W: number, H: number) {
+  if (!pic.shapes.length) return
+  if (!(p.hazeBlur > 0)) {
+    pic.shapes.forEach((b, i) => {
+      const amount = Math.max(0, all[ORDER[pic.shapeStems[i]]] ?? 1)
+      layers.front.push(amount === 1 ? b : { ...b, alpha: Math.min(1, b.alpha * amount) })
     })
+    return
+  }
+  const bySound = p.hazeLayers === 'sound'
+  const deep = (p.depth ?? 0) > 0
+  const lop = clamp01(p.layerOpacity ?? 1)
+  const used = new Set<number>()
+  pic.shapes.forEach((b, i) => {
+    const si = pic.shapeStems[i]
+    const stem = ORDER[si]
+    const amount = Math.max(0, all[stem] ?? 1)
+    if (amount <= 0.001) return
+    const tier = deep ? tierOf(depthAt(p, b.x, b.y, W, H, si, i)) : 0
+    const li = tier * 4 + (bySound ? pic.shapeDepth[stem] : 0)
+    used.add(li)
+    // Together, each part's amount on its shapes; apart, on its layer (and anything past 1 on the shapes).
+    const k = bySound ? Math.max(1, amount) : amount
+    layers.shapesByStem[li].blobs.push(k === 1 ? b : { ...b, alpha: Math.min(1, b.alpha * k) })
   })
+  for (const li of used) {
+    const layer = layers.shapesByStem[li]
+    const tier = Math.floor(li / 4), slot = li % 4
+    const stem = (Object.keys(pic.shapeDepth) as Stem[]).find((st) => pic.shapeDepth[st] === slot)!
+    const amount = bySound ? Math.min(1, Math.max(0, all[stem] ?? 1)) : 1
+    const look = tierLook(p, p.hazeBlur, tier, 0.07)
+    layer.radius = deep ? look.radius : p.hazeBlur
+    layer.stretch = p.hazeStretch
+    layer.gain.value = p.hazeGain
+    layer.opacity.value = p.hazeOpacity
+    layer.edge.value = clamp01(p.hazeEdge)
+    layer.fade.value = amount * lop * (deep ? look.fade : 1)
+    layer.blend = p.layerBlend === 'multiply' ? 'multiply' : 'normal'
+  }
 }
 
 function create(): SubInstance {
@@ -968,7 +1145,7 @@ function create(): SubInstance {
         // Fit the blob layer: fewer rows until the dots do.
         let rows = Math.max(8, Math.round(p.rows))
         pic = generate(comp, a, rows, p, W, H)
-        while (Math.max(pic.dots.length, pic.marks.length) > BUDGET && rows > 8) {
+        while (Math.max(pic.dots.length + pic.shapes.length, pic.marks.length) > BUDGET && rows > 8) {
           rows = Math.max(8, Math.floor(rows * 0.8))
           pic = generate(comp, a, rows, p, W, H)
         }
@@ -1024,6 +1201,7 @@ function create(): SubInstance {
         const keep = kind && pic.grid && p.motionAmount > 0 && kind.streaks ? clamp01(kind.streaks(own, clamp01(p.motionAmount))) : 1
         for (const s of pic.streaks) if (keep > 0.003) back.push(keep < 1 ? { ...s, alpha: (s.alpha ?? 1) * keep } : s)
         for (const b of pic.dots) front.push(b)
+        drawShapes(layers, pic, p, all, W, H)
       }
       if (placed.length) {
         const fall = Math.exp(-dt / 0.3)
@@ -1043,14 +1221,17 @@ function create(): SubInstance {
       const lop = clamp01(p.layerOpacity ?? 1)
       const multiply = p.layerBlend === 'multiply'
       if (p.hazeBlur > 0) {
-        if (p.hazeLayers === 'sound') hazeBySound(layers, hazeOf, p, ink, all, lop, multiply)
+        if (p.hazeLayers === 'sound') hazeBySound(layers, hazeOf, p, ink, all, lop, multiply, W, H)
         else {
           drawHaze(layers, hazeOf, p, ink)
-          if (lop < 1) {
-            layers.barsFar.opacity.value *= lop
-            layers.barsMid.opacity.value *= lop
-          }
+          layers.barsFar.fade.value = lop
+          layers.barsMid.fade.value = lop
           layers.barsFar.blend = multiply ? 'multiply' : 'normal'
+          // With depth, the far haze comes apart by depth (every sound together in each tier).
+          if ((p.depth ?? 0) > 0) {
+            layers.barsFar.bars.count = 0
+            hazeBySound(layers, hazeOf, p, ink, all, lop, multiply, W, H, false)
+          }
         }
       }
       const crisp = clamp01(p.crisp) * lop
@@ -1089,7 +1270,7 @@ export const dots: SubMode = {
     'Single line · dusk': {
       params: {
         rows: 45, lanes: 20, systems: 1, margin: 0, groupGap: 1, flow: 'across', parts: 'row', rowShow: 'leader',
-        partSpread: 0, rowGap: 2.75, stretch: 4, accents: 5, accentSize: 0.075, accentColour: 'own',
+        partSpread: 0, rowGap: 2.75, stretch: 4, accents: 5, accentSize: 0.019, accentColour: 'own',
         hazeLayers: 'sound', floor: 0.35, gamma: 0.95, laneFloor: 0.05, accent: 0.045, palette: 'across',
         colX0: -0.8, colY1: 1.2, colRepeat: 'clamp', offset: 1, ghost: 0, dotMin: 0.235, dotBase: 0.05,
         dotEvent: 0.8, soft: 1, streak: 1, streakWidth: 1.05, ruling: 0, paper: 0, dotSize: 0.72, dotLength: 3.15,
@@ -1098,6 +1279,21 @@ export const dots: SubMode = {
         drums: 1.24, bass: 1.16,
       },
       ...PAPER,
+    },
+    // One row of distinct, overlapping, softly blurred shapes (fields): each part gathers its notes into its own
+    // lenses or round forms in its own shade of one hue, on its own blurred layer (big pale forms behind, small
+    // dark ones in front), with solid accent dots on top.
+    'Single line': {
+      params: {
+        style: 'fields', rows: 48, systems: 1, margin: 0, flow: 'across', parts: 'row', partSpread: 0.35,
+        accents: 2, accentSize: 0.3, accentColour: 'own', hazeLayers: 'sound', layerOpacity: 0.85, layerBlend: 'normal',
+        floor: 0.3, laneFloor: 0.05, palette: 'green', offset: 0.35, paper: 0,
+        form: 'blob', size: 3.2, character: 1, softness: 0.35, opacity: 0.85, tint: 0.4, wobble: 0.2,
+        hazeBlur: 5, hazeStretch: 1.3, hazeGain: 1.15, hazeOpacity: 1, hazeEdge: 0.45,
+        merge: 1, minEvent: 0.3, hats: 0.2, drumGroup: 4, wash: 0,
+      },
+      background: '#e8ebf2',
+      ink: '#121317',
     },
     // Close up: the loudest 4 bars, fewer, bigger dots.
     'Close-up': { params: { anchor: 'loudest', span: 4, rows: 32, lanes: 28, dotEvent: 0.46, streakWidth: 1.2 }, ...PAPER },

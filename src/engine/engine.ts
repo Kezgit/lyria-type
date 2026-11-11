@@ -1,11 +1,12 @@
 import * as THREE from 'three/webgpu'
-import { Backdrop, Grain, SoftGrain } from './backdrop'
+import { Backdrop, Grain } from './backdrop'
+import { GrainFx } from './grainFx'
 import { BarLayer } from './barLayer'
 import { BlobLayer } from './blobLayer'
 import { GlyphLayer } from './glyphLayer'
 import { GooLayer } from './gooLayer'
 import { BlurredGlyphLayer } from './blurredGlyphLayer'
-import { BlurredBarLayer } from './blurLayer'
+import { BlurredBarLayer, BlurredBlobLayer } from './blurLayer'
 import { FieldFx } from './fieldFx'
 import { StretchFx } from './stretchFx'
 import { StencilFx } from './stencilFx'
@@ -59,9 +60,11 @@ export class Engine {
   readonly barsFar = new BlurredBarLayer(MAX_BLOBS, 3)
   readonly barsMid = new BlurredBarLayer(MAX_BLOBS, 4)
   /** The haze as one layer per sound (vocals, instruments, drums, bass), each blurred apart and laid on in turn. */
-  readonly hazeByStem = Array.from({ length: 4 }, () => new BlurredBarLayer(MAX_BLOBS, 3))
+  readonly hazeByStem = Array.from({ length: 12 }, () => new BlurredBarLayer(MAX_BLOBS, 3))
+  /** Soft shapes blurred per sound (Dots' fields), each its own layer, laid on in turn. */
+  readonly shapesByStem = Array.from({ length: 12 }, () => new BlurredBlobLayer(MAX_BLOBS, 4))
   /** Soft grain over everything (Stacked line's). */
-  readonly softGrain = new SoftGrain()
+  readonly softGrain = new GrainFx()
   /** Glyphs and bars merged into gooey forms (metaball morphs), just under the text. */
   readonly goo: GooLayer
   readonly front = new BlobLayer(MAX_BLOBS, 20)
@@ -101,9 +104,9 @@ export class Engine {
     this.field = new FieldFx(MAX_GLYPHS, this.haloAtlas.texture, this.haloAtlas.sdf, 12)
     this.stencil = new StencilFx(this.atlas.texture, this.atlas.sdf)
     this.scene.add(
-      this.backdrop.mesh, this.canvas2d.mesh, this.back.mesh, this.barsFar.composite, ...this.hazeByStem.map((h) => h.composite), this.barsMid.composite, this.bars.mesh, this.goo.composite, this.glyphs.mesh,
+      this.backdrop.mesh, this.canvas2d.mesh, this.back.mesh, this.barsFar.composite, ...this.hazeByStem.map((h) => h.composite), this.barsMid.composite, ...this.shapesByStem.map((h) => h.composite), this.bars.mesh, this.goo.composite, this.glyphs.mesh,
       this.field.composite, this.halosFar.composite, this.halosMid.composite, this.outlines.mesh,
-      this.front.mesh, this.grain.mesh, this.softGrain.mesh,
+      this.front.mesh, this.grain.mesh,
     )
 
     new ResizeObserver(() => this.resize()).observe(container)
@@ -252,8 +255,14 @@ export class Engine {
     this.bars.count = 0
     this.blend.clear()
     this.barsFar.bars.count = 0
+    for (const h of [this.barsFar, this.barsMid, ...this.hazeByStem, ...this.shapesByStem]) h.fade.value = 1
     for (const h of this.hazeByStem) {
       h.bars.count = 0
+      h.stretch = 1
+      h.blend = 'normal'
+    }
+    for (const h of this.shapesByStem) {
+      h.blobs.count = 0
       h.stretch = 1
       h.blend = 'normal'
     }
@@ -334,7 +343,7 @@ export class Engine {
           backdrop: this.backdrop, back: this.back, bars: this.bars, barsMid: this.barsMid, barsFar: this.barsFar, goo: this.goo, glyphs: this.glyphs,
           outlines: this.outlines, halosMid: this.halosMid, halosFar: this.halosFar,
           front: this.front, grain: this.grain, stretch: this.stretch, field: this.field, stencil: this.stencil, blend: this.blend,
-          canvas: this.canvas2d, hazeByStem: this.hazeByStem, softGrain: this.softGrain,
+          canvas: this.canvas2d, hazeByStem: this.hazeByStem, shapesByStem: this.shapesByStem, softGrain: this.softGrain,
         },
       })
     }
@@ -365,6 +374,7 @@ export class Engine {
         this.halosMid.render(this.renderer, this.camera)
         this.barsFar.render(this.renderer, this.camera)
         for (const h of this.hazeByStem) h.render(this.renderer, this.camera)
+        for (const h of this.shapesByStem) h.render(this.renderer, this.camera)
         this.barsMid.render(this.renderer, this.camera)
         this.goo.render(this.renderer, this.camera)
         this.renderer.render(this.scene, this.camera)
@@ -372,7 +382,9 @@ export class Engine {
     }
     // Marks with their own blend mode go over the drawn frame (inside the stencil, when it's on).
     const drawBlended = () => (this.blend.active ? this.blend.render(this.renderer, this.camera, this.bars, draw) : draw())
-    if (this.stencil.enabled) this.stencil.render(this.renderer, this.camera, this.viewport, state.background, drawBlended)
-    else drawBlended()
+    const frame = () => (this.stencil.enabled ? this.stencil.render(this.renderer, this.camera, this.viewport, state.background, drawBlended) : drawBlended())
+    // Stacked line's grain over the finished frame.
+    if (this.softGrain.on) this.softGrain.render(this.renderer, frame)
+    else frame()
   }
 }

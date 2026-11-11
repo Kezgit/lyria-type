@@ -98,16 +98,18 @@ const subOf = (values: Record<string, any>) => SUBS.find((s) => s.id === values.
  * amounts join the style's Layers (each sound's layer, by its amount).
  */
 const SECTION_ORDER = [
-  'Layout', 'Colour', 'Gradient map', 'Recolour', 'Layers', 'Dots', 'Accent dots', 'Haze', 'Grain',
+  'Layout', 'Colour', 'Gradient map', 'Recolour', 'Layers', 'Depth', 'Shapes', 'Blur', 'Gathering', 'Dots', 'Accent dots', 'Haze', 'Grain',
   'Song window', 'Reading the music', 'Timing', 'Motion', 'Fields', 'Dot shape', 'Mark shape', 'Mask', 'Characters',
 ]
 /** Open on a fresh load; the rest start folded (the panel remembers what you open). */
-export const OPEN_SECTIONS = ['Layout', 'Colour', 'Layers']
+export const OPEN_SECTIONS = ['Layout', 'Colour', 'Layers', 'Shapes', 'Blur']
 
 function groupsFor(values: Record<string, any>) {
   const sub = subOf(values)
   const all: Record<string, string[]> = { Timing: ['hold', 'scroll', 'scrollSpeed'] }
-  for (const [title, keys] of Object.entries(sub.groupsFor?.(values) ?? sub.groups)) all[title] = keys.map((k) => key(sub, k))
+  // (The sub-mode reads its own values, unprefixed.)
+  const own = Object.fromEntries(Object.keys(sub.params).map((k) => [k, values[key(sub, k)]]))
+  for (const [title, keys] of Object.entries(sub.groupsFor?.(own) ?? sub.groups)) all[title] = keys.map((k) => key(sub, k))
   for (const [title, keys] of Object.entries(finishGroups(sub.id, sub.groups))) {
     const t = title === 'Stems' ? 'Layers' : title
     all[t] = t === 'Layers' ? [...keys, ...(all.Layers ?? [])] : keys
