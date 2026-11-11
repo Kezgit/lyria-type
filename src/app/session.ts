@@ -1,3 +1,4 @@
+import defaultScene from './defaultScene.json'
 import { applyScene, exportScene } from './scene'
 
 // The working session: everything as last left (text, type, colours, layout,
@@ -8,7 +9,10 @@ import { applyScene, exportScene } from './scene'
 const KEY = 'lyria-type:session'
 const ENDPOINT = '/__session'
 
-type Saved = ReturnType<typeof exportScene>
+/** Which default scene a session was made over (its save time). */
+const BASE = (defaultScene as { savedAt?: string }).savedAt ?? ''
+
+type Saved = ReturnType<typeof exportScene> & { base?: string }
 
 /** Put back the newest saved session (browser or project file). Resolves true if one was applied. */
 export async function restoreSession(): Promise<boolean> {
@@ -24,7 +28,9 @@ export async function restoreSession(): Promise<boolean> {
       if (data?.savedAt) file = data
     }
   } catch {}
-  const best = [local, file].filter(Boolean).sort((a, b) => (b!.savedAt > a!.savedAt ? 1 : -1))[0]
+  // Only a session made over the current default scene comes back: a new default shows to everyone,
+  // whatever they last left (and anything changed over it afterwards carries on as ever).
+  const best = [local, file].filter((x) => x && x.base === BASE).sort((a, b) => (b!.savedAt > a!.savedAt ? 1 : -1))[0]
   if (!best) return false
   try {
     const warnings = await applyScene(best)
@@ -54,7 +60,7 @@ export function autosave() {
     const key = JSON.stringify(look)
     if (key === last) return
     last = key
-    const body = JSON.stringify(scene, null, 2)
+    const body = JSON.stringify({ ...scene, base: BASE }, null, 2)
     try {
       localStorage.setItem(KEY, body)
     } catch {}
